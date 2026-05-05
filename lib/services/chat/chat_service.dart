@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_service.dart';
@@ -206,12 +207,18 @@ class ChatService {
         : OpenAiAdapterImpl();
 
     final buffer = StringBuffer();
+    final reasoningBuf = StringBuffer();
     try {
       await for (final chunk in service.sendMessageStream(
         config: config,
         messages: contextMessages,
         systemPrompt: systemPrompt,
       )) {
+        // Reasoning content must not enter the display buffer
+        if (chunk.startsWith('\x00__R__\x00')) {
+          reasoningBuf.write(chunk.substring('\x00__R__\x00'.length));
+          continue;
+        }
         buffer.write(chunk);
         await _messageDao.updateContent(
           aiMsgId,
@@ -237,6 +244,14 @@ class ChatService {
         displayContent,
         isStreaming: false,
       );
+      // Store reasoning as message metadata for collapsible display
+      final reasoningText = reasoningBuf.toString();
+      if (reasoningText.isNotEmpty) {
+        await _messageDao.updateMetadata(
+          aiMsgId,
+          jsonEncode({'reasoning_content': reasoningText}),
+        );
+      }
       onAiChunk(displayContent, true);
 
       await _contactDao.updateLastMessage(

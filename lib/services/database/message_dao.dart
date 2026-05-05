@@ -131,6 +131,16 @@ class MessageDao {
     );
   }
 
+  Future<void> updateMetadata(String id, String metadataJson) async {
+    final db = await _database;
+    await db.update(
+      'messages',
+      {'metadata': metadataJson},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<void> delete(String id) async {
     final db = await _database;
     await db.delete('messages', where: 'id = ?', whereArgs: [id]);

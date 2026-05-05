@@ -38,7 +38,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _ttsEnabled = false;
   String? _lastUserText;
   String? _lastAiMsgId;
-  final _reasoningBuf = StringBuffer();
 
   @override
   void initState() {
@@ -82,7 +81,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Future<void> _sendMessage(Contact contact, String text) async {
     if (_isSending) return;
     _lastUserText = text;
-    _reasoningBuf.clear();
     setState(() {
       _isSending = true;
       _isTyping = true;
@@ -120,16 +118,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             if (msgs.isNotEmpty) {
               final lastMsg = msgs.last;
               if (lastMsg.role == MessageRole.assistant) {
-                // Separate reasoning content from visible text
-                final parts = content.split('\x00__R__\x00');
-                final displayContent = parts.first;
-                for (var i = 1; i < parts.length; i++) {
-                  _reasoningBuf.write(parts[i]);
-                }
-
                 messagesNotifier.updateLastMessage(
                   lastMsg.id,
-                  displayContent,
+                  content,
                   isStreaming: !isDone,
                 );
                 _scrollToBottom(animated: false);
@@ -138,15 +129,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             if (isDone) {
               if (mounted) setState(() => _isSending = false);
               ref.read(contactsProvider.notifier).refresh();
-              // Store accumulated reasoning in metadata for collapsible display
-              final reasoningText = _reasoningBuf.toString();
-              if (reasoningText.isNotEmpty && _lastAiMsgId != null) {
-                messagesNotifier.updateLastMessageMetadata(_lastAiMsgId!, {
-                  'reasoning_content': reasoningText,
-                });
-              }
               if (_ttsEnabled) {
-                _speakAiResponse(content.split('\x00__R__\x00').first);
+                _speakAiResponse(content);
               }
             }
           },
