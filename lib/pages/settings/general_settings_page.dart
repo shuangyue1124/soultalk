@@ -1430,8 +1430,9 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
         connectTimeout: const Duration(seconds: 15),
         receiveTimeout: const Duration(seconds: 15),
       ));
-      final normalizedUrl =
-          baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+      final normalizedUrl = baseUrl.endsWith('/')
+          ? baseUrl.substring(0, baseUrl.length - 1)
+          : baseUrl;
       final resp = await dio.get(
         '$normalizedUrl/models',
         options: Options(
@@ -1569,68 +1570,76 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
         ),
       ),
       const SizedBox(height: 12),
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: _availableModels.isEmpty
-                ? TextField(
-                    controller: _modelCtrl,
-                    decoration: InputDecoration(
-                      labelText: '模型',
-                      hintText: 'whisper-1',
-                      errorText: _fetchModelError,
-                      errorMaxLines: 2,
-                    ),
-                  )
-                : DropdownButtonFormField<String>(
-                    initialValue: _availableModels.contains(_modelCtrl.text)
-                        ? _modelCtrl.text
-                        : _availableModels.first,
-                    decoration: const InputDecoration(labelText: '模型'),
-                    isExpanded: true,
-                    items: _availableModels
-                        .map((m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(m, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _modelCtrl.text = v);
-                    },
-                  ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 48,
-            child: _isFetchingModels
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : IconButton(
-                    icon: Icon(
-                      _availableModels.isEmpty
-                          ? Icons.cloud_download_outlined
-                          : Icons.refresh,
-                      color: WeChatColors.primary,
-                    ),
-                    tooltip: '从 API 获取模型列表',
-                    onPressed: _fetchModels,
-                  ),
-          ),
-        ],
-      ),
+      _buildModelField('whisper-1'),
       const SizedBox(height: 12),
       TextField(
         controller: _languageCtrl,
         decoration: const InputDecoration(labelText: '语言', hintText: 'zh'),
       ),
     ];
+  }
+
+  Widget _buildModelField(String hintText) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: _availableModels.isEmpty
+              ? TextField(
+                  controller: _modelCtrl,
+                  decoration: InputDecoration(
+                    labelText: '模型',
+                    hintText: hintText,
+                    errorText: _fetchModelError,
+                    errorMaxLines: 2,
+                  ),
+                )
+              : DropdownButtonFormField<String>(
+                  initialValue:
+                      _availableModels.contains(_modelCtrl.text)
+                          ? _modelCtrl.text
+                          : _availableModels.first,
+                  decoration: const InputDecoration(labelText: '模型'),
+                  isExpanded: true,
+                  items:
+                      _availableModels
+                          .map(
+                            (m) => DropdownMenuItem(
+                              value: m,
+                              child: Text(m, overflow: TextOverflow.ellipsis),
+                            ),
+                          )
+                          .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _modelCtrl.text = v);
+                  },
+                ),
+        ),
+        const SizedBox(width: 4),
+        SizedBox(
+          height: 48,
+          child: _isFetchingModels
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : IconButton(
+                  icon: Icon(
+                    _availableModels.isEmpty
+                        ? Icons.cloud_download_outlined
+                        : Icons.refresh,
+                    color: WeChatColors.primary,
+                  ),
+                  tooltip: '从 API 获取模型列表',
+                  onPressed: _fetchModels,
+                ),
+        ),
+      ],
+    );
   }
 
   List<Widget> _buildTtsFields() {
@@ -1696,65 +1705,12 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
         ),
       ],
       const SizedBox(height: 12),
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: _availableModels.isEmpty
-                ? TextField(
-                    controller: _modelCtrl,
-                    decoration: InputDecoration(
-                      labelText: '模型',
-                      hintText: _ttsProvider == TtsProvider.openai
-                          ? 'tts-1'
-                          : _ttsProvider == TtsProvider.elevenlabs
-                          ? 'eleven_multilingual_v2'
-                          : '',
-                      errorText: _fetchModelError,
-                      errorMaxLines: 2,
-                    ),
-                  )
-                : DropdownButtonFormField<String>(
-                    initialValue: _availableModels.contains(_modelCtrl.text)
-                        ? _modelCtrl.text
-                        : _availableModels.first,
-                    decoration: const InputDecoration(labelText: '模型'),
-                    isExpanded: true,
-                    items: _availableModels
-                        .map((m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(m, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _modelCtrl.text = v);
-                    },
-                  ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 48,
-            child: _isFetchingModels
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : IconButton(
-                    icon: Icon(
-                      _availableModels.isEmpty
-                          ? Icons.cloud_download_outlined
-                          : Icons.refresh,
-                      color: WeChatColors.primary,
-                    ),
-                    tooltip: '从 API 获取模型列表',
-                    onPressed: _fetchModels,
-                  ),
-          ),
-        ],
+      _buildModelField(
+        _ttsProvider == TtsProvider.openai
+            ? 'tts-1'
+            : _ttsProvider == TtsProvider.elevenlabs
+            ? 'eleven_multilingual_v2'
+            : '',
       ),
       const SizedBox(height: 12),
       TextField(
