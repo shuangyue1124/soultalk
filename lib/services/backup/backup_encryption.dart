@@ -7,7 +7,7 @@ class BackupEncryption {
   static const _saltLength = 32;
   static const _ivLength = 16;
 
-  /// Encrypt bytes with AES-256-CBC using password.
+  /// Encrypt bytes with AES-128-CBC using password.
   /// Returns [salt][iv][ciphertext] concatenated.
   static Uint8List encrypt(Uint8List plainData, String password) {
     // Generate random salt and IV
@@ -59,17 +59,15 @@ class BackupEncryption {
     return Uint8List.fromList(decrypted);
   }
 
-  /// Derive a 32-byte key from password + salt using PBKDF2-like approach.
+  /// Derive a 16-byte key from password + salt (AES-128).
   static Uint8List _deriveKey(String password, List<int> salt) {
     final saltStr = String.fromCharCodes(salt);
     var key = utf8.encode('$password$saltStr');
-    // Multiple rounds of HMAC-SHA256
     final passwordBytes = utf8.encode(password);
     for (var i = 0; i < 10000; i++) {
       final hmac = Hmac(sha256, key);
       key = Uint8List.fromList(hmac.convert(passwordBytes).bytes);
     }
-    // Final hash to get exactly 32 bytes
-    return Uint8List.fromList(sha256.convert(key).bytes);
+    return Uint8List.fromList(sha256.convert(key).bytes.sublist(0, 16));
   }
 }

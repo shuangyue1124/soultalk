@@ -239,13 +239,19 @@ class ChatService {
         RegexPlacement.aiOutput,
       );
 
+      // If model only produced thinking without final answer,
+      // show the thinking as content so the bubble is not empty
+      final reasoningText = reasoningBuf.toString();
+      if (displayContent.isEmpty && reasoningText.isNotEmpty) {
+        displayContent = '[思考完成，但模型未输出文本回复]';
+      }
+
       await _messageDao.updateContent(
         aiMsgId,
         displayContent,
         isStreaming: false,
       );
       // Store reasoning as message metadata for collapsible display
-      final reasoningText = reasoningBuf.toString();
       if (reasoningText.isNotEmpty) {
         await _messageDao.updateMetadata(
           aiMsgId,
