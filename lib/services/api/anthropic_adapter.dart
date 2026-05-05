@@ -45,6 +45,9 @@ class AnthropicAdapterImpl implements LlmService {
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
       body['system'] = systemPrompt;
     }
+    if (config.thinkingEnabled) {
+      body['output_config'] = {'effort': config.reasoningEffort};
+    }
 
     final response = await _dio.post(
       '$baseUrl/v1/messages',
@@ -82,6 +85,9 @@ class AnthropicAdapterImpl implements LlmService {
     };
     if (systemPrompt != null && systemPrompt.isNotEmpty) {
       body['system'] = systemPrompt;
+    }
+    if (config.thinkingEnabled) {
+      body['output_config'] = {'effort': config.reasoningEffort};
     }
 
     final response = await streamDio.post<ResponseBody>(

@@ -39,13 +39,7 @@ class OpenAiAdapterImpl implements LlmService {
           'Content-Type': 'application/json',
         },
       ),
-      data: {
-        'model': config.model,
-        'messages': _buildMessages(messages, systemPrompt),
-        'max_tokens': config.maxTokens,
-        'temperature': config.temperature,
-        'stream': false,
-      },
+      data: _buildRequestData(config, messages, systemPrompt, stream: false),
     );
     final data = response.data as Map<String, dynamic>;
     final choices = data['choices'] as List?;
@@ -80,13 +74,7 @@ class OpenAiAdapterImpl implements LlmService {
         },
         responseType: ResponseType.stream,
       ),
-      data: {
-        'model': config.model,
-        'messages': _buildMessages(messages, systemPrompt),
-        'max_tokens': config.maxTokens,
-        'temperature': config.temperature,
-        'stream': true,
-      },
+      data: _buildRequestData(config, messages, systemPrompt, stream: true),
     );
 
     if (response.data == null) {
@@ -116,6 +104,10 @@ class OpenAiAdapterImpl implements LlmService {
           if (choices != null && choices.isNotEmpty) {
             final delta = choices.first['delta'] as Map<String, dynamic>?;
             final content = delta?['content'] as String?;
+            final reasoning = delta?['reasoning_content'] as String?;
+            if (reasoning != null && reasoning.isNotEmpty) {
+              yield '\x00__R__\x00$reasoning';
+            }
             if (content != null && content.isNotEmpty) {
               yield content;
             }
@@ -123,6 +115,30 @@ class OpenAiAdapterImpl implements LlmService {
         } catch (_) {}
       }
     }
+  }
+
+  Map<String, dynamic> _buildRequestData(
+    ApiConfig config,
+    List<Message> messages,
+    String? systemPrompt, {
+    required bool stream,
+  }) {
+    final data = <String, dynamic>{
+      'model': config.model,
+      'messages': _buildMessages(messages, systemPrompt),
+      'max_tokens': config.maxTokens,
+      'stream': stream,
+    };
+    // Non-streaming can include temperature
+    if (!stream) {
+      data['temperature'] = config.temperature;
+    }
+    // DeepSeek thinking mode
+    if (config.thinkingEnabled) {
+      data['thinking'] = {'type': 'enabled'};
+      data['reasoning_effort'] = config.reasoningEffort;
+    }
+    return data;
   }
 
   String _normalizeUrl(String url) =>

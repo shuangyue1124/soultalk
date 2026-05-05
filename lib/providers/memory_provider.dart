@@ -53,6 +53,27 @@ class MemoryNotifier extends FamilyAsyncNotifier<List<MemoryEntry>, String> {
     state = const AsyncData([]);
   }
 
+  Future<void> addEntry(String category, String key, String value) async {
+    final dao = ref.read(memoryEntryDaoProvider);
+    final entry = MemoryEntry(
+      id: '',
+      contactId: arg,
+      category: category,
+      key: key,
+      value: value,
+      updatedAt: DateTime.now(),
+    );
+    await dao.upsert(entry);
+    await refresh();
+  }
+
+  Future<void> updateEntry(MemoryEntry entry) async {
+    await ref.read(memoryEntryDaoProvider).upsert(entry);
+    state = AsyncData(
+      state.value?.map((e) => e.id == entry.id ? entry : e).toList() ?? [],
+    );
+  }
+
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
@@ -94,6 +115,25 @@ class MemoryCardNotifier extends FamilyAsyncNotifier<List<MemoryCard>, String> {
   @override
   Future<List<MemoryCard>> build(String contactId) async {
     return ref.read(memoryCardDaoProvider).getActiveByContact(contactId);
+  }
+
+  Future<void> addCard(MemoryCard card) async {
+    await ref.read(memoryCardDaoProvider).insert(card);
+    await refresh();
+  }
+
+  Future<void> updateCard(MemoryCard card) async {
+    await ref.read(memoryCardDaoProvider).update(card);
+    state = AsyncData(
+      state.value?.map((c) => c.id == card.id ? card : c).toList() ?? [],
+    );
+  }
+
+  Future<void> deleteCard(String cardId) async {
+    await ref.read(memoryCardDaoProvider).delete(cardId);
+    state = AsyncData(
+      state.value?.where((c) => c.id != cardId).toList() ?? [],
+    );
   }
 
   Future<void> refresh() async {

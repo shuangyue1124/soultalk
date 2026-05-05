@@ -332,6 +332,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   );
   late LlmProvider _provider = widget.existing?.provider ?? LlmProvider.openai;
   bool _showKey = false;
+  late bool _thinkingEnabled = widget.existing?.thinkingEnabled ?? false;
+  late String _reasoningEffort = widget.existing?.reasoningEffort ?? 'high';
 
   // 模型列表相关状态
   List<String> _availableModels = [];
@@ -584,6 +586,36 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            // 思考模式（DeepSeek 等支持 thinking 的模型）
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('思考模式', style: TextStyle(fontSize: 14)),
+              subtitle: const Text(
+                '启用后模型会先进行深度思考再回复',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: _thinkingEnabled,
+              activeTrackColor: WeChatColors.primary,
+              onChanged: (v) => setState(() => _thinkingEnabled = v),
+            ),
+            if (_thinkingEnabled)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: DropdownButtonFormField<String>(
+                  initialValue: _reasoningEffort,
+                  decoration: const InputDecoration(
+                    labelText: '思考强度',
+                    helperText: 'high 适合大多数场景，max 适合复杂推理',
+                    helperMaxLines: 2,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'high', child: Text('高 (high)')),
+                    DropdownMenuItem(value: 'max', child: Text('最大 (max)')),
+                  ],
+                  onChanged: (v) => setState(() => _reasoningEffort = v ?? 'high'),
+                ),
+              ),
           ],
         ),
       ),
@@ -596,9 +628,12 @@ class _ConfigDialogState extends State<_ConfigDialog> {
           onPressed: () {
             if (_nameCtrl.text.trim().isEmpty ||
                 _apiKeyCtrl.text.trim().isEmpty) {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('名称和 API Key 不能为空')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('名称和 API Key 不能为空'),
+                  duration: Duration(seconds: 3),
+                ),
+              );
               return;
             }
             final config = ApiConfig(
@@ -612,6 +647,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
               model: _modelCtrl.text.trim().isEmpty
                   ? 'gpt-4o-mini'
                   : _modelCtrl.text.trim(),
+              thinkingEnabled: _thinkingEnabled,
+              reasoningEffort: _reasoningEffort,
             );
             Navigator.of(context).pop(config);
           },

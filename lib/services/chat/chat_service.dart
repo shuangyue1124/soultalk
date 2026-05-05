@@ -46,6 +46,7 @@ class ChatService {
     _stateDao = MemoryStateDao(db);
     _cardDao = MemoryCardDao(db);
     _memoryService = MemoryService(_memoryDao, _stateDao, _cardDao);
+    _memoryService.setMessageDao(_messageDao);
     _regexScriptDao = RegexScriptDao(db);
   }
 
@@ -58,8 +59,11 @@ class ChatService {
   Future<void> updateContact(Contact contact) => _contactDao.update(contact);
 
   Future<void> deleteContact(String id) async {
-    await _messageDao.deleteByContact(id);
-    await _contactDao.delete(id);
+    final db = await DatabaseService().database;
+    await db.transaction((txn) async {
+      await txn.delete('messages', where: 'contact_id = ?', whereArgs: [id]);
+      await txn.delete('contacts', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   Future<List<Contact>> searchContacts(String query) =>
@@ -218,28 +222,32 @@ class ChatService {
       }
 
       String finalAiContent = buffer.toString();
-      finalAiContent = _regexService.applyScripts(
-        finalAiContent,
+
+      // Separate memory markers from user-visible content
+      final stripped = MemoryService.stripMemoryMarkers(finalAiContent);
+      String displayContent = stripped.displayText;
+      displayContent = _regexService.applyScripts(
+        displayContent,
         regexScripts,
         RegexPlacement.aiOutput,
       );
 
       await _messageDao.updateContent(
         aiMsgId,
-        finalAiContent,
+        displayContent,
         isStreaming: false,
       );
-      onAiChunk(finalAiContent, true);
+      onAiChunk(displayContent, true);
 
       await _contactDao.updateLastMessage(
         contact.id,
-        finalAiContent,
+        displayContent,
         DateTime.now(),
       );
 
-      // ── Memory pipeline: after response ─────────────────────────────
+      // ── Memory pipeline: after response (uses raw content with markers) ─
       try {
-        _memoryService.afterResponse(
+        await _memoryService.afterResponse(
           contactId: contact.id,
           aiResponse: finalAiContent,
         );
@@ -247,11 +255,8 @@ class ChatService {
 
       _tryExtractMemory(contact, config);
     } catch (e) {
-      await _messageDao.updateContent(
-        aiMsgId,
-        '[错误] ${e.toString()}',
-        isStreaming: false,
-      );
+      // Keep AI message empty so UI can detect failure and offer retry
+      await _messageDao.updateContent(aiMsgId, '', isStreaming: false);
       onError?.call(e.toString());
     }
   }

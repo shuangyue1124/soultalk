@@ -19,6 +19,8 @@ _$ApiConfigImpl _$$ApiConfigImplFromJson(Map<String, dynamic> json) =>
       maxTokens: (json['maxTokens'] as num?)?.toInt() ?? 4096,
       temperature: (json['temperature'] as num?)?.toDouble() ?? 0.8,
       streamEnabled: json['streamEnabled'] as bool? ?? true,
+      thinkingEnabled: json['thinkingEnabled'] as bool? ?? false,
+      reasoningEffort: json['reasoningEffort'] as String? ?? 'high',
       createdAt: json['createdAt'] == null
           ? null
           : DateTime.parse(json['createdAt'] as String),
@@ -38,6 +40,8 @@ Map<String, dynamic> _$$ApiConfigImplToJson(_$ApiConfigImpl instance) =>
       'maxTokens': instance.maxTokens,
       'temperature': instance.temperature,
       'streamEnabled': instance.streamEnabled,
+      'thinkingEnabled': instance.thinkingEnabled,
+      'reasoningEffort': instance.reasoningEffort,
       'createdAt': instance.createdAt?.toIso8601String(),
       'updatedAt': instance.updatedAt?.toIso8601String(),
     };

@@ -145,14 +145,20 @@ class _MomentsPageState extends ConsumerState<MomentsPage> {
   }
 
   Future<void> _generateMoments() async {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('正在生成朋友圈动态...')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('正在生成朋友圈动态...'),
+        duration: Duration(seconds: 3),
+      ),
+    );
     await ref.read(momentsProvider.notifier).generateMoments();
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('新动态已生成')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('新动态已生成'),
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 

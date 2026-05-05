@@ -77,6 +77,9 @@ dependencies:
   # 分享文件
   share_plus: ^10.1.4
 
+  # 音频播放
+  just_audio: ^0.9.40
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

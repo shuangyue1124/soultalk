@@ -3,9 +3,12 @@ import '../../models/memory_card.dart';
 import '../../models/api_config.dart';
 import '../../models/memory_entry.dart';
 import '../../models/memory_state.dart';
+import '../../models/message.dart';
+import '../api/llm_service.dart';
 import '../database/memory_card_dao.dart';
 import '../database/memory_entry_dao.dart';
 import '../database/memory_state_dao.dart';
+import '../database/message_dao.dart';
 import 'state_renderer.dart';
 import 'state_injector.dart';
 import 'retrieval_gate.dart';
@@ -24,6 +27,7 @@ class MemoryService {
   final MemoryEntryDao _memoryDao;
   final MemoryStateDao _stateDao;
   final MemoryCardDao _cardDao;
+  MessageDao? _messageDao;
 
   final StateRenderer _stateRenderer;
   final StateInjector _stateInjector;
@@ -47,6 +51,9 @@ class MemoryService {
        _stateFiller = StateFiller(_stateDao),
        _cardExtractor = CardExtractor(),
        _reviewPolicy = ReviewPolicy(config);
+
+  /// Set the message DAO for LLM-based memory extraction.
+  void setMessageDao(MessageDao dao) => _messageDao = dao;
 
   // ── Pipeline: before request ─────────────────────────────────────
 
@@ -177,15 +184,88 @@ class MemoryService {
     return MemoryEntry.tableToPrompt(entries);
   }
 
-  /// Legacy extraction — delegates to the new pipeline's afterResponse.
+  /// Legacy extraction — uses LLM to extract memories from recent conversation.
   Future<void> extractMemories({
     required String contactId,
     required ApiConfig apiConfig,
   }) async {
-    // Fallback: use the old LLM-based extraction if the AI response
-    // contains explicit [MEMORY:...] or [STATE:...] markers.
-    // Otherwise this is a no-op — the pipeline handles extraction
-    // from the AI's own output in afterResponse().
+    final msgDao = _messageDao;
+    if (msgDao == null) return;
+
+    final messages = await msgDao.getRecentByContact(contactId, 30);
+    if (messages.length < 4) return;
+
+    final conversationText = messages
+        .where((m) => m.role != MessageRole.system)
+        .map((m) =>
+            '[${m.role == MessageRole.user ? "user" : "assistant"}]: ${m.content}')
+        .join('\n');
+
+    final prompt = '''从以下对话中提取关键记忆。请使用指定格式输出，每条一行：
+
+[MEMORY:fact] 内容 (importance: 0.8, confidence: 0.9, scope: local, tags: 标签1,标签2)
+[STATE:状态名] 值 (confidence: 0.8)
+
+支持的 MEMORY 类型: fact, event, preference, boundary, relationship, character_state, world_state, roleplay_rule, speech_style, misc
+支持的 scope: local, shared, global
+
+对话:
+$conversationText''';
+
+    final service = LlmService.fromConfig(apiConfig);
+    try {
+      final response = await service.sendMessage(
+        config: apiConfig.copyWith(
+          temperature: 0.3,
+          maxTokens: 2048,
+          streamEnabled: false,
+        ),
+        messages: [
+          Message(
+            id: '',
+            contactId: contactId,
+            role: MessageRole.user,
+            content: prompt,
+            createdAt: DateTime.now(),
+          ),
+        ],
+      );
+      if (response.isNotEmpty) {
+        await afterResponse(contactId: contactId, aiResponse: response);
+      }
+    } catch (_) {}
+  }
+
+  /// Split AI response into display text and memory-marker text.
+  /// Memory markers ([MEMORY:...], [STATE:...]) are extracted for the
+  /// memory pipeline and stripped from user-visible content.
+  static StripResult stripMemoryMarkers(String text) {
+    final memoryBuf = StringBuffer();
+    final memRegex = RegExp(
+      r'\[MEMORY:\w+\]\s*.+?\n?\)',
+      multiLine: true,
+    );
+    final stateRegex = RegExp(
+      r'\[STATE:\w+\]\s*.+?\n?\)',
+      multiLine: true,
+    );
+
+    for (final m in memRegex.allMatches(text)) {
+      memoryBuf.writeln(m.group(0));
+    }
+    for (final m in stateRegex.allMatches(text)) {
+      memoryBuf.writeln(m.group(0));
+    }
+
+    var display = text;
+    display = display.replaceAll(memRegex, '');
+    display = display.replaceAll(stateRegex, '');
+    display = display.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+
+    return StripResult(
+      displayText: display,
+      memoryText: memoryBuf.toString().trim(),
+    );
   }
 
   Future<void> deleteMemory(String id) => _memoryDao.delete(id);
@@ -319,4 +399,10 @@ List<String> _extractKeywords(String userText, List<MemoryState> states) {
   }
 
   return keywords.take(10).toList();
+}
+
+class StripResult {
+  final String displayText;
+  final String memoryText;
+  const StripResult({required this.displayText, required this.memoryText});
 }

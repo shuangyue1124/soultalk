@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:just_audio/just_audio.dart';
 import '../../models/contact.dart';
 import '../../models/message.dart';
 import '../../models/api_config.dart';
@@ -12,6 +14,7 @@ import '../../theme/wechat_colors.dart';
 import '../../models/voice_config.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../services/chat/typing_simulator.dart';
+import '../../services/tts/tts_service.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/input_bar.dart';
 import 'widgets/typing_indicator.dart';
@@ -33,6 +36,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isRecording = false;
   bool _hasReceivedFirstChunk = false;
   bool _ttsEnabled = false;
+  String? _lastUserText;
+  String? _lastAiMsgId;
+  final _reasoningBuf = StringBuffer();
 
   @override
   void initState() {
@@ -75,6 +81,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _sendMessage(Contact contact, String text) async {
     if (_isSending) return;
+    _lastUserText = text;
+    _reasoningBuf.clear();
     setState(() {
       _isSending = true;
       _isTyping = true;
@@ -96,12 +104,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           contact: contact,
           userText: text,
           onMessagesCreated: (userMsg, aiMsg) {
+            _lastAiMsgId = aiMsg.id;
             messagesNotifier.addMessage(userMsg);
             messagesNotifier.addMessage(aiMsg);
             _scrollToBottom(animated: true);
           },
           onAiChunk: (content, isDone) {
-            // 第一个 chunk 到达 → 隐藏"对方正在输入"状态
             if (!_hasReceivedFirstChunk && mounted) {
               setState(() => _hasReceivedFirstChunk = true);
               _delayedHideTyping();
@@ -112,9 +120,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             if (msgs.isNotEmpty) {
               final lastMsg = msgs.last;
               if (lastMsg.role == MessageRole.assistant) {
+                // Separate reasoning content from visible text
+                final parts = content.split('\x00__R__\x00');
+                final displayContent = parts.first;
+                for (var i = 1; i < parts.length; i++) {
+                  _reasoningBuf.write(parts[i]);
+                }
+
                 messagesNotifier.updateLastMessage(
                   lastMsg.id,
-                  content,
+                  displayContent,
                   isStreaming: !isDone,
                 );
                 _scrollToBottom(animated: false);
@@ -123,7 +138,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             if (isDone) {
               if (mounted) setState(() => _isSending = false);
               ref.read(contactsProvider.notifier).refresh();
-              if (_ttsEnabled) _speakAiResponse(content);
+              // Store accumulated reasoning in metadata for collapsible display
+              final reasoningText = _reasoningBuf.toString();
+              if (reasoningText.isNotEmpty && _lastAiMsgId != null) {
+                messagesNotifier.updateLastMessageMetadata(
+                  _lastAiMsgId!,
+                  {'reasoning_content': reasoningText},
+                );
+              }
+              if (_ttsEnabled) _speakAiResponse(content.split('\x00__R__\x00').first);
             }
           },
           onError: (error) {
@@ -131,17 +154,27 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               setState(() {
                 _isSending = false;
                 _isTyping = false;
-                _hasReceivedFirstChunk = true; // 隐藏 typing
+                _hasReceivedFirstChunk = true;
               });
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('发送失败: $error'),
                   backgroundColor: Colors.red,
-                  duration: const Duration(seconds: 6),
+                  duration: const Duration(seconds: 4),
+                  behavior: SnackBarBehavior.floating,
                   action: SnackBarAction(
-                    label: '修改配置',
+                    label: '重试',
                     textColor: Colors.white,
-                    onPressed: () => context.push('/settings/api'),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      // Remove failed AI placeholder
+                      if (_lastAiMsgId != null) {
+                        messagesNotifier.removeMessage(_lastAiMsgId!);
+                      }
+                      if (_lastUserText != null) {
+                        _sendMessage(contact, _lastUserText!);
+                      }
+                    },
                   ),
                 ),
               );
@@ -176,7 +209,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       final prefs = await SharedPreferences.getInstance();
       final ttsConfig = await TtsConfig.load(prefs);
       if (ttsConfig.apiKey.isEmpty) return;
-      // TODO: call TTS service to synthesize and play audio
+
+      // Strip memory markers so internal instructions are never spoken
+      final cleanText = TtsService.stripMemoryMarkers(text);
+      if (cleanText.isEmpty) return;
+
+      final service = TtsService();
+      final filePath = await service.synthesize(ttsConfig, cleanText);
+      if (filePath == null || !mounted) return;
+
+      final player = AudioPlayer();
+      await player.setFilePath(filePath);
+      await player.play();
+      // Auto-dispose after playback completes
+      player.processingStateStream
+          .where((s) => s == ProcessingState.completed)
+          .first
+          .then((_) {
+        player.dispose();
+        try { File(filePath).delete(); } catch (_) {}
+      });
     } catch (_) {}
   }
 
@@ -193,6 +245,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('请先在通用设置中配置语音识别（STT）API'),
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
             action: SnackBarAction(
               label: '去设置',
               onPressed: () => context.push('/settings/general'),
@@ -205,37 +259,66 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     setState(() => _isRecording = !_isRecording);
     if (_isRecording) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('开始录音...（再次点击停止）')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('开始录音...（再次点击停止）'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('录音已停止，正在识别...')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('录音已停止，正在识别...'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
   }
 
   void _showMessageActions(BuildContext context, Message message) {
     final isUser = message.role == MessageRole.user;
+    final isAiError = message.role == MessageRole.assistant &&
+        !message.isStreaming &&
+        message.content.isEmpty;
+
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (isAiError)
+              ListTile(
+                leading: const Icon(Icons.refresh, color: WeChatColors.primary),
+                title: const Text('重新生成'),
+                subtitle: const Text(
+                  '使用当前配置重新发送上一条消息',
+                  style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
+                ),
+                onTap: () {
+                  ctx.pop();
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ref.read(messagesProvider(widget.contactId).notifier)
+                      .removeMessage(message.id);
+                  final contact = ref.read(contactsProvider).value
+                      ?.where((c) => c.id == widget.contactId).firstOrNull;
+                  if (contact != null && _lastUserText != null) {
+                    _sendMessage(contact, _lastUserText!);
+                  }
+                },
+              ),
             if (isUser)
               ListTile(
                 leading: const Icon(Icons.undo, color: WeChatColors.primary),
                 title: const Text('撤回消息'),
                 subtitle: const Text(
                   'AI 会知道此消息被撤回',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: WeChatColors.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
                 ),
                 onTap: () {
                   ctx.pop();
@@ -249,10 +332,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               title: const Text('删除消息'),
               subtitle: const Text(
                 'AI 不会知道此消息被删除',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: WeChatColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
               ),
               onTap: () {
                 ctx.pop();

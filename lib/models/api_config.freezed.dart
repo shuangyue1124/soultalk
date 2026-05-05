@@ -30,6 +30,8 @@ mixin _$ApiConfig {
   int get maxTokens => throw _privateConstructorUsedError;
   double get temperature => throw _privateConstructorUsedError;
   bool get streamEnabled => throw _privateConstructorUsedError;
+  bool get thinkingEnabled => throw _privateConstructorUsedError;
+  String get reasoningEffort => throw _privateConstructorUsedError;
   DateTime? get createdAt => throw _privateConstructorUsedError;
   DateTime? get updatedAt => throw _privateConstructorUsedError;
 
@@ -58,6 +60,8 @@ abstract class $ApiConfigCopyWith<$Res> {
     int maxTokens,
     double temperature,
     bool streamEnabled,
+    bool thinkingEnabled,
+    String reasoningEffort,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
@@ -87,6 +91,8 @@ class _$ApiConfigCopyWithImpl<$Res, $Val extends ApiConfig>
     Object? maxTokens = null,
     Object? temperature = null,
     Object? streamEnabled = null,
+    Object? thinkingEnabled = null,
+    Object? reasoningEffort = null,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -128,6 +134,14 @@ class _$ApiConfigCopyWithImpl<$Res, $Val extends ApiConfig>
                 ? _value.streamEnabled
                 : streamEnabled // ignore: cast_nullable_to_non_nullable
                       as bool,
+            thinkingEnabled: null == thinkingEnabled
+                ? _value.thinkingEnabled
+                : thinkingEnabled // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            reasoningEffort: null == reasoningEffort
+                ? _value.reasoningEffort
+                : reasoningEffort // ignore: cast_nullable_to_non_nullable
+                      as String,
             createdAt: freezed == createdAt
                 ? _value.createdAt
                 : createdAt // ignore: cast_nullable_to_non_nullable
@@ -161,6 +175,8 @@ abstract class _$$ApiConfigImplCopyWith<$Res>
     int maxTokens,
     double temperature,
     bool streamEnabled,
+    bool thinkingEnabled,
+    String reasoningEffort,
     DateTime? createdAt,
     DateTime? updatedAt,
   });
@@ -189,6 +205,8 @@ class __$$ApiConfigImplCopyWithImpl<$Res>
     Object? maxTokens = null,
     Object? temperature = null,
     Object? streamEnabled = null,
+    Object? thinkingEnabled = null,
+    Object? reasoningEffort = null,
     Object? createdAt = freezed,
     Object? updatedAt = freezed,
   }) {
@@ -230,6 +248,14 @@ class __$$ApiConfigImplCopyWithImpl<$Res>
             ? _value.streamEnabled
             : streamEnabled // ignore: cast_nullable_to_non_nullable
                   as bool,
+        thinkingEnabled: null == thinkingEnabled
+            ? _value.thinkingEnabled
+            : thinkingEnabled // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        reasoningEffort: null == reasoningEffort
+            ? _value.reasoningEffort
+            : reasoningEffort // ignore: cast_nullable_to_non_nullable
+                  as String,
         createdAt: freezed == createdAt
             ? _value.createdAt
             : createdAt // ignore: cast_nullable_to_non_nullable
@@ -256,6 +282,8 @@ class _$ApiConfigImpl implements _ApiConfig {
     this.maxTokens = 4096,
     this.temperature = 0.8,
     this.streamEnabled = true,
+    this.thinkingEnabled = false,
+    this.reasoningEffort = 'high',
     this.createdAt,
     this.updatedAt,
   });
@@ -287,13 +315,19 @@ class _$ApiConfigImpl implements _ApiConfig {
   @JsonKey()
   final bool streamEnabled;
   @override
+  @JsonKey()
+  final bool thinkingEnabled;
+  @override
+  @JsonKey()
+  final String reasoningEffort;
+  @override
   final DateTime? createdAt;
   @override
   final DateTime? updatedAt;
 
   @override
   String toString() {
-    return 'ApiConfig(id: $id, name: $name, provider: $provider, baseUrl: $baseUrl, apiKey: $apiKey, model: $model, maxTokens: $maxTokens, temperature: $temperature, streamEnabled: $streamEnabled, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'ApiConfig(id: $id, name: $name, provider: $provider, baseUrl: $baseUrl, apiKey: $apiKey, model: $model, maxTokens: $maxTokens, temperature: $temperature, streamEnabled: $streamEnabled, thinkingEnabled: $thinkingEnabled, reasoningEffort: $reasoningEffort, createdAt: $createdAt, updatedAt: $updatedAt)';
   }
 
   @override
@@ -314,6 +348,10 @@ class _$ApiConfigImpl implements _ApiConfig {
                 other.temperature == temperature) &&
             (identical(other.streamEnabled, streamEnabled) ||
                 other.streamEnabled == streamEnabled) &&
+            (identical(other.thinkingEnabled, thinkingEnabled) ||
+                other.thinkingEnabled == thinkingEnabled) &&
+            (identical(other.reasoningEffort, reasoningEffort) ||
+                other.reasoningEffort == reasoningEffort) &&
             (identical(other.createdAt, createdAt) ||
                 other.createdAt == createdAt) &&
             (identical(other.updatedAt, updatedAt) ||
@@ -333,6 +371,8 @@ class _$ApiConfigImpl implements _ApiConfig {
     maxTokens,
     temperature,
     streamEnabled,
+    thinkingEnabled,
+    reasoningEffort,
     createdAt,
     updatedAt,
   );
@@ -362,6 +402,8 @@ abstract class _ApiConfig implements ApiConfig {
     final int maxTokens,
     final double temperature,
     final bool streamEnabled,
+    final bool thinkingEnabled,
+    final String reasoningEffort,
     final DateTime? createdAt,
     final DateTime? updatedAt,
   }) = _$ApiConfigImpl;
@@ -387,6 +429,10 @@ abstract class _ApiConfig implements ApiConfig {
   double get temperature;
   @override
   bool get streamEnabled;
+  @override
+  bool get thinkingEnabled;
+  @override
+  String get reasoningEffort;
   @override
   DateTime? get createdAt;
   @override

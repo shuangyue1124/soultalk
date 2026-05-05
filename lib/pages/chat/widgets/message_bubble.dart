@@ -77,6 +77,8 @@ class _TextBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reasoningContent = message.metadata?['reasoning_content'] as String?;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
@@ -95,6 +97,8 @@ class _TextBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
+                if (reasoningContent != null && reasoningContent.isNotEmpty)
+                  _ThinkingSection(content: reasoningContent),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -140,6 +144,72 @@ class _TextBubble extends StatelessWidget {
               child: Icon(Icons.person, color: Colors.white, size: 20),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ThinkingSection extends StatefulWidget {
+  final String content;
+  const _ThinkingSection({required this.content});
+
+  @override
+  State<_ThinkingSection> createState() => _ThinkingSectionState();
+}
+
+class _ThinkingSectionState extends State<_ThinkingSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey.withAlpha(18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.withAlpha(50)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.psychology, size: 14, color: WeChatColors.textSecondary),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '思考过程',
+                    style: TextStyle(fontSize: 11, color: WeChatColors.textSecondary),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 14,
+                    color: WeChatColors.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              child: Text(
+                widget.content,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: WeChatColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+            ),
         ],
       ),
     );

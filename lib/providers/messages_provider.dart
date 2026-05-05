@@ -65,6 +65,16 @@ class MessagesNotifier extends FamilyAsyncNotifier<List<Message>, String> {
     }
   }
 
+  void updateLastMessageMetadata(String id, Map<String, dynamic> metadata) {
+    final list = state.value ?? [];
+    final idx = list.indexWhere((m) => m.id == id);
+    if (idx >= 0) {
+      final newList = List<Message>.from(list);
+      newList[idx] = newList[idx].copyWith(metadata: metadata);
+      state = AsyncData(newList);
+    }
+  }
+
   Future<void> removeMessage(String messageId) async {
     final service = ref.read(chatServiceProvider);
     await service.deleteMessage(messageId);

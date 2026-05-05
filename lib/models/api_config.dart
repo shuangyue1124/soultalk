@@ -17,6 +17,8 @@ class ApiConfig with _$ApiConfig {
     @Default(4096) int maxTokens,
     @Default(0.8) double temperature,
     @Default(true) bool streamEnabled,
+    @Default(false) bool thinkingEnabled,
+    @Default('high') String reasoningEffort,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) = _ApiConfig;
