@@ -19,6 +19,7 @@ class BalanceNotifier extends FamilyAsyncNotifier<BalanceInfo?, String> {
 
   @override
   Future<BalanceInfo?> build(String apiConfigId) async {
+    ref.onDispose(() => _timer?.cancel());
     return null; // Not fetched until manually triggered or first auto-check
   }
 

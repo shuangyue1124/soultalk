@@ -310,11 +310,10 @@ ${msg.content}
   ) {
     // 【已确认】差异超过 1 小时 → 告警记录
     final diff = apiTime.difference(systemTime).abs();
-    // 在实际应用中，这里应接入日志/通知系统
     // ignore: avoid_print
     print(
-      '[时间告警] 联系人: ${contact.name}, '
-      'API 时间: $apiTime, 系统时间: $systemTime, 差异: ${diff.inMinutes} 分钟',
+      '[TimeAlert] contact: ${contact.name}, '
+      'apiTime: $apiTime, systemTime: $systemTime, diff: ${diff.inMinutes}m',
     );
   }
 

@@ -59,11 +59,11 @@ class ChatPreset {
           .toList();
     }
     return ChatPreset(
-      id: row['id'] as String,
-      name: row['name'] as String,
-      enabled: (row['enabled'] as int) == 1,
+      id: row['id'] as String? ?? '',
+      name: row['name'] as String? ?? 'Unnamed',
+      enabled: (row['enabled'] as int?) == 1,
       segments: segments,
-      createdAt: row['created_at'] != null
+      createdAt: row['created_at'] is String
           ? DateTime.tryParse(row['created_at'] as String)
           : null,
     );

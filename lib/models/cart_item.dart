@@ -32,9 +32,9 @@ class CartItem {
   };
 
   factory CartItem.fromDbRow(Map<String, dynamic> row) => CartItem(
-    id: row['id'] as String,
-    name: row['name'] as String,
-    price: (row['price'] as num).toDouble(),
+    id: row['id'] as String? ?? '',
+    name: row['name'] as String? ?? '',
+    price: (row['price'] as num?)?.toDouble() ?? 0.0,
     quantity: row['quantity'] as int? ?? 1,
     shop: row['shop'] as String?,
   );

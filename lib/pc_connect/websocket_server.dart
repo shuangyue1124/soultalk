@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import 'package:uuid/uuid.dart';
 
 import 'connection_manager.dart';
 import 'sync_handler.dart';
@@ -25,6 +27,7 @@ class WebSocketServer {
   String? _currentToken;
   Timer? _idleTimer;
 
+  final _uuid = const Uuid();
   final ConnectionManager _connectionManager = ConnectionManager();
   final SyncHandler _syncHandler = SyncHandler();
   final ApiConfigSender _apiConfigSender = ApiConfigSender();
@@ -45,11 +48,6 @@ class WebSocketServer {
       throw StateError('Server already running');
     }
 
-    // 生成随机端口
-    final port =
-        _minPort +
-        (DateTime.now().millisecondsSinceEpoch % (_maxPort - _minPort));
-
     // 生成 JWT 密钥
     _jwtSecret = _generateSecret();
     _refreshToken();
@@ -58,13 +56,22 @@ class WebSocketServer {
         .addMiddleware(_checkAuth())
         .addHandler(webSocketHandler(_handleConnection));
 
-    _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
-
-    _startIdleTimer();
-
-    _eventController.add({'type': 'server_started', 'port': port});
-
-    return port;
+    // 带重试的端口绑定
+    final rng = Random.secure();
+    const maxRetries = 20;
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      final port = _minPort + rng.nextInt(_maxPort - _minPort + 1);
+      try {
+        _server = await shelf_io.serve(handler, InternetAddress.anyIPv4, port);
+        _startIdleTimer();
+        _eventController.add({'type': 'server_started', 'port': port});
+        return port;
+      } on SocketException {
+        if (attempt == maxRetries - 1) rethrow;
+        continue;
+      }
+    }
+    throw StateError('Failed to bind to any port after $maxRetries attempts');
   }
 
   /// 停止服务器
@@ -109,10 +116,8 @@ class WebSocketServer {
   }
 
   String _generateSecret() {
-    final random = List.generate(
-      32,
-      (_) => DateTime.now().microsecondsSinceEpoch % 256,
-    );
+    final rng = Random.secure();
+    final random = List.generate(32, (_) => rng.nextInt(256));
     return base64Url.encode(random);
   }
 
@@ -383,7 +388,7 @@ class WebSocketServer {
   }
 
   String _generateDeviceId() {
-    return 'pc_${DateTime.now().millisecondsSinceEpoch}_${_connectionManager.connectedDevices.length}';
+    return 'pc_${_uuid.v4()}';
   }
 
   void _startIdleTimer() {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -7,10 +8,15 @@ class DatabaseService {
   DatabaseService._internal();
 
   Database? _db;
+  Future<Database>? _initFuture;
 
-  Future<Database> get database async {
-    _db ??= await _initDatabase();
-    return _db!;
+  Future<Database> get database {
+    if (_db != null) return Future.value(_db!);
+    _initFuture ??= _initDatabase().then((db) {
+      _db = db;
+      return db;
+    });
+    return _initFuture!;
   }
 
   Future<Database> _initDatabase() async {
@@ -328,50 +334,6 @@ class DatabaseService {
       );
     }
     if (oldVersion < 6) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS memory_states (
-          id TEXT PRIMARY KEY,
-          contact_id TEXT NOT NULL,
-          slot_name TEXT NOT NULL,
-          slot_value TEXT NOT NULL DEFAULT '',
-          slot_type TEXT NOT NULL DEFAULT 'text',
-          status TEXT NOT NULL DEFAULT 'active',
-          confidence REAL NOT NULL DEFAULT 0.5,
-          updated_at TEXT NOT NULL,
-          FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
-        )
-      ''');
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_memory_states_contact ON memory_states(contact_id)',
-      );
-      await db.execute(
-        'CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_states_slot ON memory_states(contact_id, slot_name)',
-      );
-
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS memory_cards (
-          id TEXT PRIMARY KEY,
-          contact_id TEXT NOT NULL,
-          content TEXT NOT NULL,
-          card_type TEXT NOT NULL DEFAULT 'fact',
-          importance REAL NOT NULL DEFAULT 0.5,
-          confidence REAL NOT NULL DEFAULT 0.5,
-          scope TEXT NOT NULL DEFAULT 'local',
-          tags TEXT NOT NULL DEFAULT '',
-          status TEXT NOT NULL DEFAULT 'active',
-          created_at TEXT NOT NULL,
-          reviewed_at TEXT,
-          FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
-        )
-      ''');
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_memory_cards_contact ON memory_cards(contact_id)',
-      );
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_memory_cards_status ON memory_cards(status)',
-      );
-    }
-    if (oldVersion < 7) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS memory_states (
           id TEXT PRIMARY KEY,

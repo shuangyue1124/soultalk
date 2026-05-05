@@ -87,57 +87,63 @@ class MomentDao {
 
   Future<void> addLike(String momentId, String userId) async {
     final db = await _database;
-    final rows = await db.query(
-      'moments',
-      where: 'id = ?',
-      whereArgs: [momentId],
-    );
-    if (rows.isEmpty) return;
-    final moment = _fromMap(rows.first);
-    if (moment.likes.contains(userId)) return;
-    final newLikes = [...moment.likes, userId];
-    await db.update(
-      'moments',
-      {'likes': jsonEncode(newLikes)},
-      where: 'id = ?',
-      whereArgs: [momentId],
-    );
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'moments',
+        where: 'id = ?',
+        whereArgs: [momentId],
+      );
+      if (rows.isEmpty) return;
+      final moment = _fromMap(rows.first);
+      if (moment.likes.contains(userId)) return;
+      final newLikes = [...moment.likes, userId];
+      await txn.update(
+        'moments',
+        {'likes': jsonEncode(newLikes)},
+        where: 'id = ?',
+        whereArgs: [momentId],
+      );
+    });
   }
 
   Future<void> removeLike(String momentId, String userId) async {
     final db = await _database;
-    final rows = await db.query(
-      'moments',
-      where: 'id = ?',
-      whereArgs: [momentId],
-    );
-    if (rows.isEmpty) return;
-    final moment = _fromMap(rows.first);
-    final newLikes = moment.likes.where((l) => l != userId).toList();
-    await db.update(
-      'moments',
-      {'likes': jsonEncode(newLikes)},
-      where: 'id = ?',
-      whereArgs: [momentId],
-    );
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'moments',
+        where: 'id = ?',
+        whereArgs: [momentId],
+      );
+      if (rows.isEmpty) return;
+      final moment = _fromMap(rows.first);
+      final newLikes = moment.likes.where((l) => l != userId).toList();
+      await txn.update(
+        'moments',
+        {'likes': jsonEncode(newLikes)},
+        where: 'id = ?',
+        whereArgs: [momentId],
+      );
+    });
   }
 
   Future<void> addComment(String momentId, MomentComment comment) async {
     final db = await _database;
-    final rows = await db.query(
-      'moments',
-      where: 'id = ?',
-      whereArgs: [momentId],
-    );
-    if (rows.isEmpty) return;
-    final moment = _fromMap(rows.first);
-    final newComments = [...moment.comments, comment];
-    await db.update(
-      'moments',
-      {'comments': jsonEncode(newComments.map((c) => c.toJson()).toList())},
-      where: 'id = ?',
-      whereArgs: [momentId],
-    );
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'moments',
+        where: 'id = ?',
+        whereArgs: [momentId],
+      );
+      if (rows.isEmpty) return;
+      final moment = _fromMap(rows.first);
+      final newComments = [...moment.comments, comment];
+      await txn.update(
+        'moments',
+        {'comments': jsonEncode(newComments.map((c) => c.toJson()).toList())},
+        where: 'id = ?',
+        whereArgs: [momentId],
+      );
+    });
   }
 
   Future<void> delete(String id) async {

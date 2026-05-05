@@ -54,10 +54,13 @@ class ImportService {
 
     try {
       final decoded = jsonDecode(content);
-      if (decoded is! Map<String, dynamic> && decoded is! List) {
-        return ImportValidationResult.fail('JSON 格式错误：根元素应为对象或数组');
+      if (decoded is List) {
+        return ImportValidationResult.fail('JSON 格式错误：根元素是数组，应为对象');
       }
-      return ImportValidationResult.ok(decoded as Map<String, dynamic>);
+      if (decoded is! Map<String, dynamic>) {
+        return ImportValidationResult.fail('JSON 格式错误：根元素应为对象');
+      }
+      return ImportValidationResult.ok(decoded);
     } on FormatException catch (e) {
       final message = e.message;
       String hint = '';

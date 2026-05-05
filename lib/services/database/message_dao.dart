@@ -36,7 +36,7 @@ class MessageDao {
       (t) => t.name == map['type'],
       orElse: () => MessageType.text,
     ),
-    isStreaming: (map['is_streaming'] as int) == 1,
+    isStreaming: (map['is_streaming'] as int? ?? 0) == 1,
     tokenCount: map['token_count'] as int? ?? 0,
     metadata: map['metadata'] != null
         ? (jsonDecode(map['metadata'] as String) as Map<String, dynamic>)

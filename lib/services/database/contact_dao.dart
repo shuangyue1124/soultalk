@@ -40,7 +40,7 @@ class ContactDao {
     systemPrompt: map['system_prompt'] as String? ?? '',
     characterCardJson: map['character_card_json'] as String?,
     tags: List<String>.from(jsonDecode(map['tags'] as String? ?? '[]') as List),
-    pinned: (map['pinned'] as int) == 1,
+    pinned: (map['pinned'] as int? ?? 0) == 1,
     unreadCount: map['unread_count'] as int? ?? 0,
     lastMessage: map['last_message'] as String?,
     lastMessageAt: map['last_message_at'] != null

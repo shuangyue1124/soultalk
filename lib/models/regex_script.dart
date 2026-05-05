@@ -147,10 +147,10 @@ class RegexScript {
 
   factory RegexScript.fromDbMap(Map<String, dynamic> map) {
     return RegexScript(
-      id: map['id'] as String,
-      scriptName: map['script_name'] as String,
-      findRegex: map['find_regex'] as String,
-      replaceString: map['replace_string'] as String,
+      id: map['id'] as String? ?? '',
+      scriptName: map['script_name'] as String? ?? '',
+      findRegex: map['find_regex'] as String? ?? '',
+      replaceString: map['replace_string'] as String? ?? '',
       trimStrings: (jsonDecode(map['trim_strings'] as String? ?? '[]') as List)
           .map((e) => e.toString())
           .toList(),
