@@ -9,6 +9,7 @@ import '../../providers/contacts_provider.dart';
 import '../../providers/messages_provider.dart';
 import '../../providers/api_config_provider.dart';
 import '../../theme/wechat_colors.dart';
+import '../../models/voice_config.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../services/chat/typing_simulator.dart';
 import 'widgets/message_bubble.dart';
@@ -31,6 +32,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _isTyping = false;
   bool _isRecording = false;
   bool _hasReceivedFirstChunk = false;
+  bool _ttsEnabled = false;
 
   @override
   void initState() {
@@ -45,6 +47,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _scrollToBottom();
       ref.read(contactsProvider.notifier).clearUnread(widget.contactId);
     });
+    _loadTtsSetting();
   }
 
   @override
@@ -120,6 +123,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             if (isDone) {
               if (mounted) setState(() => _isSending = false);
               ref.read(contactsProvider.notifier).refresh();
+              if (_ttsEnabled) _speakAiResponse(content);
             }
           },
           onError: (error) {
@@ -133,6 +137,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 SnackBar(
                   content: Text('发送失败: $error'),
                   backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 6),
+                  action: SnackBarAction(
+                    label: '修改配置',
+                    textColor: Colors.white,
+                    onPressed: () => context.push('/settings/api'),
+                  ),
                 ),
               );
             }
@@ -140,11 +150,34 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         );
   }
 
-  /// 确保输入状态至少显示 3 秒
   void _delayedHideTyping() {
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _isTyping = false);
     });
+  }
+
+  Future<void> _loadTtsSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _ttsEnabled = prefs.getBool('tts_enabled_${widget.contactId}') ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleTts(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tts_enabled_${widget.contactId}', value);
+    setState(() => _ttsEnabled = value);
+  }
+
+  Future<void> _speakAiResponse(String text) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ttsConfig = await TtsConfig.load(prefs);
+      if (ttsConfig.apiKey.isEmpty) return;
+      // TODO: call TTS service to synthesize and play audio
+    } catch (_) {}
   }
 
   Future<void> _loadMore() async {
@@ -154,8 +187,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   Future<void> _onMicTap() async {
     final prefs = await SharedPreferences.getInstance();
-    final sttKey = prefs.getString('voice_stt_api_key');
-    if (sttKey == null || sttKey.isEmpty) {
+    final sttConfig = await SttConfig.load(prefs);
+    if (sttConfig.apiKey.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -171,15 +204,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
     setState(() => _isRecording = !_isRecording);
     if (_isRecording) {
-      // Recording started — in a full implementation, this would
-      // start audio capture and stream to STT API.
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('开始录音...（再次点击停止）')));
       }
     } else {
-      // Recording stopped — process audio through STT
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -468,12 +498,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     .updateContact(contact.copyWith(proactiveEnabled: v));
               },
             ),
+            SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined),
+              title: const Text('语音回复'),
+              subtitle: const Text('使用 TTS 朗读 AI 回复'),
+              value: _ttsEnabled,
+              activeThumbColor: WeChatColors.primary,
+              onChanged: (v) {
+                ctx.pop();
+                _toggleTts(v);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.psychology_outlined),
               title: const Text('记忆表格'),
               onTap: () {
                 ctx.pop();
                 context.push('/memory/${contact.id}', extra: contact);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.api_outlined),
+              title: const Text('API 配置'),
+              onTap: () {
+                ctx.pop();
+                context.push('/settings/api');
               },
             ),
             ListTile(
