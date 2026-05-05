@@ -145,8 +145,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   'reasoning_content': reasoningText,
                 });
               }
-              if (_ttsEnabled)
+              if (_ttsEnabled) {
                 _speakAiResponse(content.split('\x00__R__\x00').first);
+              }
             }
           },
           onError: (error) {
