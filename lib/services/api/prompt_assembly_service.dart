@@ -70,7 +70,7 @@ class PromptAssemblyService {
 
     final parts = <String>[];
 
-    final globalEnabled = prefs.getBool('global_prompt_enabled') ?? false;
+    final globalEnabled = prefs.getBool('global_prompt_enabled') ?? true;
     if (globalEnabled) {
       final globalText = prefs.getString('global_prompt_text') ?? '';
       if (globalText.isNotEmpty) parts.add(globalText);
@@ -91,6 +91,19 @@ class PromptAssemblyService {
     }
 
     var systemPrompt = parts.where((p) => p.isNotEmpty).join('\n\n');
+
+    // Append memory format instructions when memory is enabled
+    final memoryEnabled = prefs.getBool('memory_enabled') ?? false;
+    if (memoryEnabled) {
+      systemPrompt =
+          '$systemPrompt\n\n'
+          '【记忆系统指令】请在每次回复末尾，根据对话中新产生的关键信息，'
+          '使用以下格式输出记忆条目（不要展示给用户看，每条单独一行）：\n'
+          '[MEMORY:类型] 内容 (importance: 重要性0~1, confidence: 置信度0~1, scope: local/shared/global, tags: 标签1,标签2)\n'
+          '[STATE:槽位名] 值 (confidence: 置信度0~1)\n'
+          'MEMORY类型可选: fact(事实), event(事件), preference(偏好), boundary(边界), relationship(关系), character_state(角色状态)\n'
+          '示例: [MEMORY:preference] 用户喜欢喝咖啡 (importance: 0.9, confidence: 0.8, scope: local, tags: 饮食,偏好)';
+    }
 
     systemPrompt = _regexService.applyMacros(systemPrompt, {
       'user': userName_,
@@ -134,7 +147,7 @@ class PromptAssemblyService {
   String _resolveMainPrompt(SharedPreferences prefs, PromptPreset preset) {
     if (preset.mainPrompt.isNotEmpty) return preset.mainPrompt;
 
-    final globalEnabled = prefs.getBool('global_prompt_enabled') ?? false;
+    final globalEnabled = prefs.getBool('global_prompt_enabled') ?? true;
     if (globalEnabled) {
       return prefs.getString('global_prompt_text') ??
           '你现在是在聊天，并非在现实，请让你的回复更符合聊天时的状态';

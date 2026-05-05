@@ -16,7 +16,8 @@ const _kSelfProfile = 'self_profile';
 
 const _kDarkMode = 'dark_mode';
 
-const _defaultGlobalPrompt = '你现在是在聊天，并非在现实，请让你的回复更符合聊天时的状态';
+const _defaultGlobalPrompt =
+    '你是一个 AI 聊天助手。请用自然、真实的聊天语气回复用户。\n\n【记忆规则】请在每次回复末尾，根据对话中新信息，用以下格式输出记忆（不要展示给用户看）：\n[MEMORY:类型] 内容 (importance: 0~1, confidence: 0~1, scope: local/shared/global, tags: 标签)\n[STATE:槽位] 值 (confidence: 0~1)\n类型: fact/event/preference/boundary/relationship/character_state';
 
 class AppSettings {
   final bool globalPromptEnabled;
@@ -34,7 +35,7 @@ class AppSettings {
   final bool darkMode;
 
   const AppSettings({
-    this.globalPromptEnabled = false,
+    this.globalPromptEnabled = true,
     this.globalPromptText = _defaultGlobalPrompt,
     this.momentsIntervalMinutes = 60,
     this.walletBalance = 999.99,
@@ -86,7 +87,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<AppSettings> build() async {
     final prefs = await SharedPreferences.getInstance();
     return AppSettings(
-      globalPromptEnabled: prefs.getBool(_kGlobalPromptEnabled) ?? false,
+      globalPromptEnabled: prefs.getBool(_kGlobalPromptEnabled) ?? true,
       globalPromptText:
           prefs.getString(_kGlobalPromptText) ?? _defaultGlobalPrompt,
       momentsIntervalMinutes: prefs.getInt(_kMomentsIntervalMinutes) ?? 60,
@@ -229,7 +230,7 @@ final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(
 
 // Convenience providers
 final globalPromptEnabledProvider = Provider<bool>((ref) {
-  return ref.watch(settingsProvider).value?.globalPromptEnabled ?? false;
+  return ref.watch(settingsProvider).value?.globalPromptEnabled ?? true;
 });
 
 final globalPromptTextProvider = Provider<String>((ref) {

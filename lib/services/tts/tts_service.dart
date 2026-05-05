@@ -16,18 +16,14 @@ class TtsService {
   /// Returns null on any failure so callers can silently fall back.
   Future<String?> synthesize(TtsConfig config, String text) async {
     if (text.trim().isEmpty) return null;
-    try {
-      final bytes = await _requestTts(config, text);
-      final dir = await getTemporaryDirectory();
-      final ext = config.audioFormat.isNotEmpty ? config.audioFormat : 'mp3';
-      final file = File(
-        '${dir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.$ext',
-      );
-      await file.writeAsBytes(bytes);
-      return file.path;
-    } catch (_) {
-      return null;
-    }
+    final bytes = await _requestTts(config, text);
+    final dir = await getTemporaryDirectory();
+    final ext = config.audioFormat.isNotEmpty ? config.audioFormat : 'mp3';
+    final file = File(
+      '${dir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.$ext',
+    );
+    await file.writeAsBytes(bytes);
+    return file.path;
   }
 
   Future<Uint8List> _requestTts(TtsConfig config, String text) async {
@@ -35,18 +31,32 @@ class TtsService {
     String url;
     Map<String, dynamic> data;
 
-    if (config.provider == TtsProvider.elevenlabs) {
-      // ElevenLabs: POST /v1/text-to-speech/{voice_id}
-      url = '$base/text-to-speech/${config.voice}';
-      data = {'text': text, 'model_id': config.model};
-    } else {
-      // OpenAI-compatible (covers openai, azure, edge, custom including MiMo)
+    if (config.provider == TtsProvider.openai ||
+        config.provider == TtsProvider.azure ||
+        config.provider == TtsProvider.edge) {
+      // OpenAI-compatible TTS: POST /v1/audio/speech with "input" field
       url = '$base/audio/speech';
       data = {
         'model': config.model,
         'input': text,
         'voice': config.voice,
         'speed': config.speed,
+        'response_format': config.audioFormat,
+      };
+    } else if (config.provider == TtsProvider.elevenlabs) {
+      // ElevenLabs: POST /v1/text-to-speech/{voice_id}
+      url = '$base/text-to-speech/${config.voice}';
+      data = {'text': text, 'model_id': config.model};
+    } else {
+      // Custom / MiMo: chat-like format with messages
+      // MiMo API expects text in role:assistant messages
+      url = '$base/audio/speech';
+      data = {
+        'model': config.model,
+        'messages': [
+          {'role': 'assistant', 'content': text},
+        ],
+        'voice': config.voice,
         'response_format': config.audioFormat,
       };
     }

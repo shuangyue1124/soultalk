@@ -193,7 +193,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final ttsConfig = await TtsConfig.load(prefs);
-      if (ttsConfig.apiKey.isEmpty) return;
+      if (ttsConfig.apiKey.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('TTS 未配置 API Key，请在通用设置中设置'),
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
 
       // Strip memory markers so internal instructions are never spoken
       final cleanText = TtsService.stripMemoryMarkers(text);
@@ -201,7 +212,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
       final service = TtsService();
       final filePath = await service.synthesize(ttsConfig, cleanText);
-      if (filePath == null || !mounted) return;
+      if (filePath == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('TTS 合成失败，请检查 API 配置和网络'),
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
 
       final player = AudioPlayer();
       await player.setFilePath(filePath);
@@ -216,7 +239,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               File(filePath).delete();
             } catch (_) {}
           });
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('TTS 播放失败: $e'),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadMore() async {
