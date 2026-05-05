@@ -1408,15 +1408,15 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
     final apiKey = _apiKeyCtrl.text.trim();
 
     if (apiKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先填写 API Key')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先填写 API Key')));
       return;
     }
     if (baseUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先填写 Base URL')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先填写 Base URL')));
       return;
     }
 
@@ -1426,18 +1426,18 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
     });
 
     try {
-      final dio = Dio(BaseOptions(
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
-      ));
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
       final normalizedUrl = baseUrl.endsWith('/')
           ? baseUrl.substring(0, baseUrl.length - 1)
           : baseUrl;
       final resp = await dio.get(
         '$normalizedUrl/models',
-        options: Options(
-          headers: {'Authorization': 'Bearer $apiKey'},
-        ),
+        options: Options(headers: {'Authorization': 'Bearer $apiKey'}),
       );
       final list = (resp.data['data'] as List?) ?? [];
       final models = list.map((m) => m['id'] as String).toList()..sort();
@@ -1580,6 +1580,10 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
   }
 
   Widget _buildModelField(String hintText) {
+    final dropdownModels = [
+      ..._availableModels,
+      if (_modelCtrl.text.isNotEmpty) _modelCtrl.text,
+    ].toList()..sort();
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -1595,23 +1599,26 @@ class _VoiceConfigSheetState extends State<_VoiceConfigSheet> {
                   ),
                 )
               : DropdownButtonFormField<String>(
+                  key: ValueKey(_availableModels.join(',')),
                   initialValue:
-                      _availableModels.contains(_modelCtrl.text)
-                          ? _modelCtrl.text
-                          : _availableModels.first,
+                      _modelCtrl.text.isNotEmpty &&
+                          dropdownModels.contains(_modelCtrl.text)
+                      ? _modelCtrl.text
+                      : dropdownModels.first,
                   decoration: const InputDecoration(labelText: '模型'),
                   isExpanded: true,
-                  items:
-                      _availableModels
-                          .map(
-                            (m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(m, overflow: TextOverflow.ellipsis),
-                            ),
-                          )
-                          .toList(),
+                  items: dropdownModels
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(m, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (v) {
-                    if (v != null) setState(() => _modelCtrl.text = v);
+                    if (v != null) {
+                      setState(() => _modelCtrl.text = v);
+                    }
                   },
                 ),
         ),
