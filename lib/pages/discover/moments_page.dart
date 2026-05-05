@@ -154,10 +154,7 @@ class _MomentsPageState extends ConsumerState<MomentsPage> {
     await ref.read(momentsProvider.notifier).generateMoments();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('新动态已生成'),
-          duration: Duration(seconds: 3),
-        ),
+        const SnackBar(content: Text('新动态已生成'), duration: Duration(seconds: 3)),
       );
     }
   }

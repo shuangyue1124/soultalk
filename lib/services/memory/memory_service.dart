@@ -197,8 +197,10 @@ class MemoryService {
 
     final conversationText = messages
         .where((m) => m.role != MessageRole.system)
-        .map((m) =>
-            '[${m.role == MessageRole.user ? "user" : "assistant"}]: ${m.content}')
+        .map(
+          (m) =>
+              '[${m.role == MessageRole.user ? "user" : "assistant"}]: ${m.content}',
+        )
         .join('\n');
 
     final prompt = '''从以下对话中提取关键记忆。请使用指定格式输出，每条一行：
@@ -241,14 +243,8 @@ $conversationText''';
   /// memory pipeline and stripped from user-visible content.
   static StripResult stripMemoryMarkers(String text) {
     final memoryBuf = StringBuffer();
-    final memRegex = RegExp(
-      r'\[MEMORY:\w+\]\s*.+?\n?\)',
-      multiLine: true,
-    );
-    final stateRegex = RegExp(
-      r'\[STATE:\w+\]\s*.+?\n?\)',
-      multiLine: true,
-    );
+    final memRegex = RegExp(r'\[MEMORY:\w+\]\s*.+?\n?\)', multiLine: true);
+    final stateRegex = RegExp(r'\[STATE:\w+\]\s*.+?\n?\)', multiLine: true);
 
     for (final m in memRegex.allMatches(text)) {
       memoryBuf.writeln(m.group(0));

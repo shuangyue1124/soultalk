@@ -181,11 +181,18 @@ class _ThinkingSectionState extends State<_ThinkingSection> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.psychology, size: 14, color: WeChatColors.textSecondary),
+                  const Icon(
+                    Icons.psychology,
+                    size: 14,
+                    color: WeChatColors.textSecondary,
+                  ),
                   const SizedBox(width: 4),
                   const Text(
                     '思考过程',
-                    style: TextStyle(fontSize: 11, color: WeChatColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: WeChatColors.textSecondary,
+                    ),
                   ),
                   const Spacer(),
                   Icon(

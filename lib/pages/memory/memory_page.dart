@@ -399,9 +399,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          this.context,
-        ).showSnackBar(
+        ScaffoldMessenger.of(this.context).showSnackBar(
           SnackBar(
             content: Text('提取失败: $e'),
             duration: const Duration(seconds: 4),
@@ -444,11 +442,9 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
         builder: (ctx) => _EntryEditDialog(),
       );
       if (result != null) {
-        await ref.read(memoryProvider(widget.contactId).notifier).addEntry(
-              result.category,
-              result.key,
-              result.value,
-            );
+        await ref
+            .read(memoryProvider(widget.contactId).notifier)
+            .addEntry(result.category, result.key, result.value);
       }
     } else if (tabIdx == 2) {
       final result = await showDialog<MemoryCard>(
@@ -456,9 +452,9 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
         builder: (ctx) => _CardEditDialog(),
       );
       if (result != null) {
-        await ref.read(memoryCardProvider(widget.contactId).notifier).addCard(
-              result,
-            );
+        await ref
+            .read(memoryCardProvider(widget.contactId).notifier)
+            .addCard(result);
       }
     }
   }
@@ -473,7 +469,9 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
       ),
     );
     if (result != null) {
-      await ref.read(memoryProvider(widget.contactId).notifier).updateEntry(
+      await ref
+          .read(memoryProvider(widget.contactId).notifier)
+          .updateEntry(
             entry.copyWith(
               category: result.category,
               key: result.key,
@@ -489,9 +487,9 @@ class _MemoryPageState extends ConsumerState<MemoryPage>
       builder: (ctx) => _CardEditDialog(existing: card),
     );
     if (result != null) {
-      await ref.read(memoryCardProvider(widget.contactId).notifier).updateCard(
-            result,
-          );
+      await ref
+          .read(memoryCardProvider(widget.contactId).notifier)
+          .updateCard(result);
     }
   }
 }
@@ -525,9 +523,7 @@ class _EntryEditDialogState extends State<_EntryEditDialog> {
   late final _catCtrl = TextEditingController(
     text: widget.existingCategory ?? '',
   );
-  late final _keyCtrl = TextEditingController(
-    text: widget.existingKey ?? '',
-  );
+  late final _keyCtrl = TextEditingController(text: widget.existingKey ?? '');
   late final _valueCtrl = TextEditingController(
     text: widget.existingValue ?? '',
   );
@@ -550,23 +546,35 @@ class _EntryEditDialogState extends State<_EntryEditDialog> {
         children: [
           TextField(
             controller: _catCtrl,
-            decoration: const InputDecoration(labelText: '分类', hintText: '例如: 偏好, 事实'),
+            decoration: const InputDecoration(
+              labelText: '分类',
+              hintText: '例如: 偏好, 事实',
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _keyCtrl,
-            decoration: const InputDecoration(labelText: '键', hintText: '例如: 喜欢的食物'),
+            decoration: const InputDecoration(
+              labelText: '键',
+              hintText: '例如: 喜欢的食物',
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _valueCtrl,
-            decoration: const InputDecoration(labelText: '值', hintText: '例如: 寿司'),
+            decoration: const InputDecoration(
+              labelText: '值',
+              hintText: '例如: 寿司',
+            ),
             maxLines: 3,
           ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
         ElevatedButton(
           onPressed: () {
             if (_keyCtrl.text.trim().isEmpty) return;
@@ -619,7 +627,10 @@ class _CardEditDialogState extends State<_CardEditDialog> {
         children: [
           TextField(
             controller: _contentCtrl,
-            decoration: const InputDecoration(labelText: '内容', hintText: '记忆内容'),
+            decoration: const InputDecoration(
+              labelText: '内容',
+              hintText: '记忆内容',
+            ),
             maxLines: 3,
           ),
           const SizedBox(height: 12),
@@ -639,13 +650,17 @@ class _CardEditDialogState extends State<_CardEditDialog> {
           Text('重要性: ${(_importance * 100).toInt()}%'),
           Slider(
             value: _importance,
-            min: 0, max: 1, divisions: 10,
+            min: 0,
+            max: 1,
+            divisions: 10,
             onChanged: (v) => setState(() => _importance = v),
           ),
           Text('置信度: ${(_confidence * 100).toInt()}%'),
           Slider(
             value: _confidence,
-            min: 0, max: 1, divisions: 10,
+            min: 0,
+            max: 1,
+            divisions: 10,
             onChanged: (v) => setState(() => _confidence = v),
           ),
           DropdownButtonFormField<String>(
@@ -661,28 +676,34 @@ class _CardEditDialogState extends State<_CardEditDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
         ElevatedButton(
           onPressed: () {
             if (_contentCtrl.text.trim().isEmpty) return;
-            final card = (widget.existing ?? MemoryCard(
-              id: '',
-              contactId: '',
-              content: '',
-              cardType: 'fact',
-              importance: 0.5,
-              confidence: 0.5,
-              scope: 'local',
-              status: 'active',
-              createdAt: DateTime.now(),
-            )).copyWith(
-              content: _contentCtrl.text.trim(),
-              cardType: _cardType,
-              importance: _importance,
-              confidence: _confidence,
-              scope: _scope,
-              reviewedAt: DateTime.now(),
-            );
+            final card =
+                (widget.existing ??
+                        MemoryCard(
+                          id: '',
+                          contactId: '',
+                          content: '',
+                          cardType: 'fact',
+                          importance: 0.5,
+                          confidence: 0.5,
+                          scope: 'local',
+                          status: 'active',
+                          createdAt: DateTime.now(),
+                        ))
+                    .copyWith(
+                      content: _contentCtrl.text.trim(),
+                      cardType: _cardType,
+                      importance: _importance,
+                      confidence: _confidence,
+                      scope: _scope,
+                      reviewedAt: DateTime.now(),
+                    );
             Navigator.pop(context, card);
           },
           child: const Text('保存'),

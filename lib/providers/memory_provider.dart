@@ -131,9 +131,7 @@ class MemoryCardNotifier extends FamilyAsyncNotifier<List<MemoryCard>, String> {
 
   Future<void> deleteCard(String cardId) async {
     await ref.read(memoryCardDaoProvider).delete(cardId);
-    state = AsyncData(
-      state.value?.where((c) => c.id != cardId).toList() ?? [],
-    );
+    state = AsyncData(state.value?.where((c) => c.id != cardId).toList() ?? []);
   }
 
   Future<void> refresh() async {

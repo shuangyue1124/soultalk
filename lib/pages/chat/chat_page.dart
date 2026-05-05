@@ -141,12 +141,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               // Store accumulated reasoning in metadata for collapsible display
               final reasoningText = _reasoningBuf.toString();
               if (reasoningText.isNotEmpty && _lastAiMsgId != null) {
-                messagesNotifier.updateLastMessageMetadata(
-                  _lastAiMsgId!,
-                  {'reasoning_content': reasoningText},
-                );
+                messagesNotifier.updateLastMessageMetadata(_lastAiMsgId!, {
+                  'reasoning_content': reasoningText,
+                });
               }
-              if (_ttsEnabled) _speakAiResponse(content.split('\x00__R__\x00').first);
+              if (_ttsEnabled)
+                _speakAiResponse(content.split('\x00__R__\x00').first);
             }
           },
           onError: (error) {
@@ -226,9 +226,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           .where((s) => s == ProcessingState.completed)
           .first
           .then((_) {
-        player.dispose();
-        try { File(filePath).delete(); } catch (_) {}
-      });
+            player.dispose();
+            try {
+              File(filePath).delete();
+            } catch (_) {}
+          });
     } catch (_) {}
   }
 
@@ -282,7 +284,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   void _showMessageActions(BuildContext context, Message message) {
     final isUser = message.role == MessageRole.user;
-    final isAiError = message.role == MessageRole.assistant &&
+    final isAiError =
+        message.role == MessageRole.assistant &&
         !message.isStreaming &&
         message.content.isEmpty;
 
@@ -298,15 +301,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 title: const Text('重新生成'),
                 subtitle: const Text(
                   '使用当前配置重新发送上一条消息',
-                  style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: WeChatColors.textSecondary,
+                  ),
                 ),
                 onTap: () {
                   ctx.pop();
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ref.read(messagesProvider(widget.contactId).notifier)
+                  ref
+                      .read(messagesProvider(widget.contactId).notifier)
                       .removeMessage(message.id);
-                  final contact = ref.read(contactsProvider).value
-                      ?.where((c) => c.id == widget.contactId).firstOrNull;
+                  final contact = ref
+                      .read(contactsProvider)
+                      .value
+                      ?.where((c) => c.id == widget.contactId)
+                      .firstOrNull;
                   if (contact != null && _lastUserText != null) {
                     _sendMessage(contact, _lastUserText!);
                   }
@@ -318,7 +328,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 title: const Text('撤回消息'),
                 subtitle: const Text(
                   'AI 会知道此消息被撤回',
-                  style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: WeChatColors.textSecondary,
+                  ),
                 ),
                 onTap: () {
                   ctx.pop();
@@ -332,7 +345,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               title: const Text('删除消息'),
               subtitle: const Text(
                 'AI 不会知道此消息被删除',
-                style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: WeChatColors.textSecondary,
+                ),
               ),
               onTap: () {
                 ctx.pop();

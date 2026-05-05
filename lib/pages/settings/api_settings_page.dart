@@ -613,7 +613,8 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                     DropdownMenuItem(value: 'high', child: Text('高 (high)')),
                     DropdownMenuItem(value: 'max', child: Text('最大 (max)')),
                   ],
-                  onChanged: (v) => setState(() => _reasoningEffort = v ?? 'high'),
+                  onChanged: (v) =>
+                      setState(() => _reasoningEffort = v ?? 'high'),
                 ),
               ),
           ],

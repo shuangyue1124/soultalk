@@ -5,10 +5,12 @@ import 'package:path_provider/path_provider.dart';
 import '../../models/voice_config.dart';
 
 class TtsService {
-  static final _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 60),
-  ));
+  static final _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+    ),
+  );
 
   /// Synthesize speech and return path to temporary audio file.
   /// Returns null on any failure so callers can silently fall back.
@@ -36,10 +38,7 @@ class TtsService {
     if (config.provider == TtsProvider.elevenlabs) {
       // ElevenLabs: POST /v1/text-to-speech/{voice_id}
       url = '$base/text-to-speech/${config.voice}';
-      data = {
-        'text': text,
-        'model_id': config.model,
-      };
+      data = {'text': text, 'model_id': config.model};
     } else {
       // OpenAI-compatible (covers openai, azure, edge, custom including MiMo)
       url = '$base/audio/speech';
@@ -69,14 +68,20 @@ class TtsService {
   /// Strip memory markers so internal instructions are never spoken.
   static String stripMemoryMarkers(String text) {
     return text
-        .replaceAll(RegExp(
-          r'\n?\[MEMORY:\w+\]\s*.+?(?:\(importance:[\s\S]+?\))\n?',
-          multiLine: true,
-        ), '')
-        .replaceAll(RegExp(
-          r'\n?\[STATE:\w+\]\s*.+?(?:\(confidence:[\s\S]+?\))\n?',
-          multiLine: true,
-        ), '')
+        .replaceAll(
+          RegExp(
+            r'\n?\[MEMORY:\w+\]\s*.+?(?:\(importance:[\s\S]+?\))\n?',
+            multiLine: true,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'\n?\[STATE:\w+\]\s*.+?(?:\(confidence:[\s\S]+?\))\n?',
+            multiLine: true,
+          ),
+          '',
+        )
         .trim();
   }
 }
