@@ -8,7 +8,15 @@ void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({'onboarding_done': true});
 
-    await tester.pumpWidget(const ProviderScope(child: SoulTalkApp()));
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: SoulTalkApp(container: container),
+      ),
+    );
 
     // Wait for the app to settle
     await tester.pumpAndSettle();

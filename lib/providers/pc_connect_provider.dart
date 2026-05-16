@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_info_plus/network_info_plus.dart';
@@ -6,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../pc_connect/websocket_server.dart';
 import '../pc_connect/models/pc_device.dart';
+
+/// 配对状态
+enum PairingState { idle, scanning, pairing, success, failed }
 
 /// PC 连接状态
 class PcConnectState {
@@ -17,6 +22,7 @@ class PcConnectState {
   final List<PcDevice> connectedDevices;
   final bool allowPCUseApi;
   final bool keepPCReadOnly;
+  final PairingState pairingState;
 
   const PcConnectState({
     this.isEnabled = false,
@@ -27,6 +33,7 @@ class PcConnectState {
     this.connectedDevices = const [],
     this.allowPCUseApi = true,
     this.keepPCReadOnly = true,
+    this.pairingState = PairingState.idle,
   });
 
   PcConnectState copyWith({
@@ -38,6 +45,7 @@ class PcConnectState {
     List<PcDevice>? connectedDevices,
     bool? allowPCUseApi,
     bool? keepPCReadOnly,
+    PairingState? pairingState,
   }) {
     return PcConnectState(
       isEnabled: isEnabled ?? this.isEnabled,
@@ -48,6 +56,7 @@ class PcConnectState {
       connectedDevices: connectedDevices ?? this.connectedDevices,
       allowPCUseApi: allowPCUseApi ?? this.allowPCUseApi,
       keepPCReadOnly: keepPCReadOnly ?? this.keepPCReadOnly,
+      pairingState: pairingState ?? this.pairingState,
     );
   }
 }
@@ -100,8 +109,50 @@ class PcConnectNotifier extends StateNotifier<PcConnectState> {
         qrData: _server.getConnectionUri(ip ?? '0.0.0.0'),
       );
     } catch (e) {
-      // 服务器启动失败
       state = state.copyWith(isServerRunning: false);
+    }
+  }
+
+  /// 完成配对：扫描 PC 二维码后，启动服务器并将 WS URI 发送给 PC
+  Future<bool> completePairing(String pairingUrl) async {
+    if (state.pairingState == PairingState.pairing) return false;
+
+    state = state.copyWith(pairingState: PairingState.pairing);
+
+    // 如果服务器未运行，先启动
+    if (!_server.isRunning) {
+      await startServer();
+    }
+
+    if (!_server.isRunning) {
+      state = state.copyWith(pairingState: PairingState.failed);
+      return false;
+    }
+
+    final wsUri = _server.getConnectionUri(state.localIp ?? '0.0.0.0');
+
+    try {
+      final uri = Uri.parse(pairingUrl);
+      final client = HttpClient();
+      try {
+        final request = await client.postUrl(uri);
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode({'ws_uri': wsUri}));
+        final response = await request.close();
+
+        if (response.statusCode == 200) {
+          state = state.copyWith(pairingState: PairingState.success);
+          return true;
+        } else {
+          state = state.copyWith(pairingState: PairingState.failed);
+          return false;
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      state = state.copyWith(pairingState: PairingState.failed);
+      return false;
     }
   }
 
@@ -118,7 +169,7 @@ class PcConnectNotifier extends StateNotifier<PcConnectState> {
     );
   }
 
-  /// 刷新二维码
+  /// 刷新二维码（旧逻辑保留，用于手动模式）
   void refreshQRCode() {
     if (!_server.isRunning) return;
 
@@ -152,6 +203,11 @@ class PcConnectNotifier extends StateNotifier<PcConnectState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('pc_keep_readonly', keep);
     state = state.copyWith(keepPCReadOnly: keep);
+  }
+
+  /// 重置配对状态
+  void resetPairingState() {
+    state = state.copyWith(pairingState: PairingState.idle);
   }
 
   void _handleEvent(Map<String, dynamic> event) {

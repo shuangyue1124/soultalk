@@ -13,14 +13,10 @@ class MessagesNotifier extends FamilyAsyncNotifier<List<Message>, String> {
   @override
   Future<List<Message>> build(String contactId) async {
     _offset = 0;
-    _hasMore = true;
-    final msgs = await ref.read(chatServiceProvider).getMessages(contactId);
-    // Load last page only, track if there are more
-    if (msgs.length > _kPageSize) {
-      _hasMore = true;
-      return msgs.sublist(msgs.length - _kPageSize);
-    }
-    _hasMore = false;
+    final msgs = await ref
+        .read(chatServiceProvider)
+        .getMessagePage(contactId, limit: _kPageSize, offset: 0);
+    _hasMore = msgs.length == _kPageSize;
     return msgs;
   }
 
@@ -28,19 +24,18 @@ class MessagesNotifier extends FamilyAsyncNotifier<List<Message>, String> {
 
   Future<void> loadMore() async {
     if (!_hasMore) return;
-    final all = await ref.read(chatServiceProvider).getMessages(arg);
-    final startIdx = (all.length - _kPageSize - (_offset + 1) * _kPageSize)
-        .clamp(0, all.length);
-    final endIdx = all.length - _kPageSize - _offset * _kPageSize;
-    if (endIdx <= 0 || startIdx >= endIdx) {
+    final nextOffset = _offset + _kPageSize;
+    final older = await ref
+        .read(chatServiceProvider)
+        .getMessagePage(arg, limit: _kPageSize, offset: nextOffset);
+    if (older.isEmpty) {
       _hasMore = false;
       return;
     }
-    _offset++;
-    final older = all.sublist(startIdx, endIdx);
+    _offset = nextOffset;
     final current = state.value ?? [];
     state = AsyncData([...older, ...current]);
-    if (startIdx == 0) _hasMore = false;
+    _hasMore = older.length == _kPageSize;
   }
 
   void addMessage(Message message) {
@@ -76,16 +71,21 @@ class MessagesNotifier extends FamilyAsyncNotifier<List<Message>, String> {
   }
 
   Future<void> removeMessage(String messageId) async {
-    final service = ref.read(chatServiceProvider);
-    await service.deleteMessage(messageId);
-    final list = state.value ?? [];
-    state = AsyncData(list.where((m) => m.id != messageId).toList());
+    final previous = state;
+    state = await AsyncValue.guard(() async {
+      final service = ref.read(chatServiceProvider);
+      await service.deleteMessage(messageId);
+      final list = previous.value ?? [];
+      return list.where((m) => m.id != messageId).toList();
+    });
   }
 
   Future<void> retractMessage(String messageId) async {
-    final list = state.value ?? [];
-    final idx = list.indexWhere((m) => m.id == messageId);
-    if (idx >= 0) {
+    final previous = state;
+    state = await AsyncValue.guard(() async {
+      final list = previous.value ?? [];
+      final idx = list.indexWhere((m) => m.id == messageId);
+      if (idx < 0) return list;
       final original = list[idx];
       await ref
           .read(chatServiceProvider)
@@ -95,23 +95,30 @@ class MessagesNotifier extends FamilyAsyncNotifier<List<Message>, String> {
         type: MessageType.system,
         content: '你撤回了一条消息',
       );
-      state = AsyncData(newList);
-    }
+      return newList;
+    });
   }
 
   Future<void> clearMessages() async {
     final contactId = arg;
-    await ref.read(chatServiceProvider).deleteMessages(contactId);
-    state = const AsyncData([]);
+    state = await AsyncValue.guard(() async {
+      await ref.read(chatServiceProvider).deleteMessages(contactId);
+      _offset = 0;
+      _hasMore = false;
+      return <Message>[];
+    });
   }
 
   Future<void> refresh() async {
     state = const AsyncLoading();
     _offset = 0;
-    _hasMore = true;
-    state = await AsyncValue.guard(
-      () => ref.read(chatServiceProvider).getMessages(arg),
-    );
+    state = await AsyncValue.guard(() async {
+      final msgs = await ref
+          .read(chatServiceProvider)
+          .getMessagePage(arg, limit: _kPageSize, offset: 0);
+      _hasMore = msgs.length == _kPageSize;
+      return msgs;
+    });
   }
 }
 

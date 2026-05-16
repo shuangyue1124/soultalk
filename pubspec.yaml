@@ -41,6 +41,7 @@ dependencies:
 
   # 二维码
   qr_flutter: ^4.1.0
+  mobile_scanner: ^6.0.0
 
   # JWT
   dart_jsonwebtoken: ^2.14.2
@@ -79,6 +80,8 @@ dependencies:
 
   # 音频播放
   just_audio: ^0.9.40
+  record: ^6.2.0
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:

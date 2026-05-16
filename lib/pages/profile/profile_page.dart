@@ -61,7 +61,7 @@ class ProfilePage extends ConsumerWidget {
                   icon: Icons.computer,
                   color: Colors.blue,
                   title: '连接电脑',
-                  subtitle: '扫码连接 PC 端',
+                  subtitle: '扫描 PC 端二维码连接',
                   onTap: () => context.push('/pc-connect'),
                 ),
               ],

@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqflite/sqflite.dart';
 import 'backup_service.dart';
 import 'cloud_storage.dart';
 import '../database/database_service.dart';
@@ -42,29 +43,27 @@ class AutoBackupService {
       final enabled = prefs.getBool('auto_backup_enabled') ?? false;
       if (!enabled) return;
 
-      // Check if there are changes since last backup
       final lastHash = prefs.getString('auto_backup_last_hash');
       final db = await DatabaseService().database;
-      final tables = ['messages', 'moments', 'contacts'];
+      final tables = {
+        'messages': 'created_at',
+        'moments': 'created_at',
+        'contacts': 'updated_at',
+      };
       final hashes = <String>[];
-      for (final table in tables) {
-        final count = Sqflite.firstIntValue(
-          await db.rawQuery('SELECT COUNT(*) FROM $table'),
-        );
-        hashes.add('$table:$count');
+      for (final entry in tables.entries) {
+        final table = entry.key;
+        final timestampColumn = entry.value;
+        final row = (await db.rawQuery(
+          'SELECT COUNT(*) AS count, MAX($timestampColumn) AS max_timestamp FROM $table',
+        )).first;
+        hashes.add('$table:${row['count']}:${row['max_timestamp']}');
       }
       final currentHash = hashes.join('|');
-      if (currentHash == lastHash) {
-        _scheduleNext();
-        return;
-      }
+      if (currentHash == lastHash) return;
 
-      // Export and upload
       final cloudType = prefs.getString('auto_backup_cloud_type');
-      if (cloudType == null) {
-        _scheduleNext();
-        return;
-      }
+      if (cloudType == null) return;
 
       final tempDir = (await getTemporaryDirectory()).path;
       final path = await _backupService.exportToZip(
@@ -103,9 +102,20 @@ class AutoBackupService {
             'auto_backup_last_time',
             DateTime.now().toIso8601String(),
           );
+          await prefs.remove('auto_backup_last_error');
         }
       }
-    } catch (_) {}
-    _scheduleNext();
+    } catch (e, stackTrace) {
+      developer.log(
+        'Auto backup failed',
+        name: 'AutoBackupService',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auto_backup_last_error', e.toString());
+    } finally {
+      if (_running) await _scheduleNext();
+    }
   }
 }

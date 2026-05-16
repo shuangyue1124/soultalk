@@ -1,16 +1,69 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../providers/pc_connect_provider.dart';
 import '../theme/wechat_colors.dart';
 
-/// 二维码展示页面 - 用于 PC 扫码连接
-class QRCodePage extends ConsumerWidget {
+/// 二维码扫描页面 — 手机扫描 PC 端二维码完成配对
+class QRCodePage extends ConsumerStatefulWidget {
   const QRCodePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<QRCodePage> createState() => _QRCodePageState();
+}
+
+class _QRCodePageState extends ConsumerState<QRCodePage> {
+  MobileScannerController? _scannerController;
+  bool _isScanning = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _scannerController = MobileScannerController();
+  }
+
+  @override
+  void dispose() {
+    _scannerController?.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (!_isScanning) return;
+
+    for (final barcode in capture.barcodes) {
+      final rawValue = barcode.rawValue;
+      if (rawValue == null) continue;
+
+      // 验证是否为配对 URL 格式
+      if (!rawValue.startsWith('http://') || !rawValue.contains('/pair?')) {
+        continue;
+      }
+
+      setState(() {
+        _isScanning = false;
+      });
+
+      ref.read(pcConnectProvider.notifier).completePairing(rawValue).then((
+        success,
+      ) {
+        if (!mounted) return;
+        if (!success) {
+          setState(() {
+            _isScanning = true;
+            _errorMessage = '配对失败，请重试';
+          });
+        }
+      });
+
+      break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final connectState = ref.watch(pcConnectProvider);
 
     return Scaffold(
@@ -23,125 +76,161 @@ class QRCodePage extends ConsumerWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            _buildEnableSwitch(context, ref, connectState),
-            if (connectState.isServerRunning) ...[
-              const SizedBox(height: 24),
-              _buildQRCode(context, connectState, ref),
-              const SizedBox(height: 16),
-              _buildConnectionInfo(connectState),
-              const SizedBox(height: 24),
-              _buildConnectedDevices(context, ref, connectState),
-            ],
-            const SizedBox(height: 24),
-            _buildSettings(context, ref, connectState),
+      body: Column(
+        children: [
+          // 扫描区域
+          Expanded(child: _buildScannerArea(connectState)),
+          // 状态提示
+          _buildStatusBar(connectState),
+          // 已连接设备
+          if (connectState.connectedDevices.isNotEmpty) ...[
+            _buildConnectedDevices(context, ref, connectState),
           ],
-        ),
+          // 设置
+          _buildSettings(context, ref, connectState),
+        ],
       ),
     );
   }
 
-  Widget _buildEnableSwitch(
-    BuildContext context,
-    WidgetRef ref,
-    PcConnectState state,
-  ) {
-    return Card(
-      child: SwitchListTile(
-        title: const Text('允许电脑连接'),
-        subtitle: Text(
-          state.isServerRunning ? '服务运行中' : '关闭状态',
-          style: TextStyle(
-            color: state.isServerRunning ? Colors.green : WeChatColors.textHint,
-            fontSize: 12,
-          ),
-        ),
-        value: state.isEnabled,
-        onChanged: (value) {
-          ref.read(pcConnectProvider.notifier).toggleEnabled(value);
-        },
-        secondary: Icon(
-          state.isServerRunning ? Icons.computer : Icons.computer_outlined,
-          color: state.isServerRunning ? Colors.green : WeChatColors.textHint,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQRCode(
-    BuildContext context,
-    PcConnectState state,
-    WidgetRef ref,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+  Widget _buildScannerArea(PcConnectState state) {
+    // 配对成功时显示结果
+    if (state.pairingState == PairingState.success) {
+      return Center(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (state.qrData != null) ...[
-              QrImageView(
-                data: state.qrData!,
-                version: QrVersions.auto,
-                size: 200,
-                backgroundColor: Colors.white,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '使用 PC 端扫描二维码连接',
-                style: TextStyle(
-                  color: WeChatColors.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${state.localIp ?? "未知"}:${state.port ?? "未知"}',
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ] else ...[
-              const SizedBox(
-                width: 200,
-                height: 200,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ],
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: () {
-                ref.read(pcConnectProvider.notifier).refreshQRCode();
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('刷新二维码'),
+            const Icon(Icons.check_circle, size: 80, color: Colors.green),
+            const SizedBox(height: 16),
+            const Text(
+              '连接成功',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '已与 PC 端建立连接',
+              style: TextStyle(color: WeChatColors.textSecondary, fontSize: 14),
             ),
           ],
         ),
-      ),
+      );
+    }
+
+    if (state.pairingState == PairingState.pairing) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('正在连接 PC 端...', style: TextStyle(fontSize: 16)),
+          ],
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        MobileScanner(controller: _scannerController, onDetect: _onDetect),
+        // 扫描框
+        Center(
+          child: Container(
+            width: 250,
+            height: 250,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.green, width: 2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        // 提示文字
+        Positioned(
+          bottom: 60,
+          left: 0,
+          right: 0,
+          child: Column(
+            children: [
+              const Text(
+                '将 PC 端二维码置于框内扫描',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                ),
+              ),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 13,
+                    shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildConnectionInfo(PcConnectState state) {
+  Widget _buildStatusBar(PcConnectState state) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
-          const SizedBox(width: 8),
-          Text(
-            '二维码有效期 2 分钟，请尽快扫描',
-            style: TextStyle(color: Colors.blue.shade700, fontSize: 12),
+          // 服务器状态
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: state.isServerRunning
+                  ? Colors.green.shade50
+                  : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  state.isServerRunning
+                      ? Icons.check_circle_outline
+                      : Icons.cancel_outlined,
+                  size: 16,
+                  color: state.isServerRunning ? Colors.green : Colors.grey,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  state.isServerRunning ? '服务运行中' : '服务未启动',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: state.isServerRunning
+                        ? Colors.green.shade700
+                        : Colors.grey,
+                  ),
+                ),
+              ],
+            ),
           ),
+          if (state.connectedDevices.isNotEmpty) ...[
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                '已连接 ${state.connectedDevices.length} 台设备',
+                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -152,65 +241,89 @@ class QRCodePage extends ConsumerWidget {
     WidgetRef ref,
     PcConnectState state,
   ) {
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '已连接设备',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: WeChatColors.textPrimary,
-                  ),
-                ),
-                if (state.connectedDevices.isNotEmpty)
-                  TextButton(
-                    onPressed: () {
-                      _showDisconnectAllDialog(context, ref);
-                    },
-                    child: const Text(
-                      '断开全部',
-                      style: TextStyle(color: Colors.red, fontSize: 12),
+    return SizedBox(
+      height: 120,
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '已连接设备',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: WeChatColors.textPrimary,
+                      fontSize: 13,
                     ),
                   ),
-              ],
-            ),
+                  if (state.connectedDevices.isNotEmpty)
+                    TextButton(
+                      onPressed: () {
+                        ref
+                            .read(pcConnectProvider.notifier)
+                            .disconnectAllDevices();
+                      },
+                      child: const Text(
+                        '断开全部',
+                        style: TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+              Expanded(
+                child: state.connectedDevices.isEmpty
+                    ? Center(
+                        child: Text(
+                          '暂无设备连接',
+                          style: TextStyle(
+                            color: WeChatColors.textHint,
+                            fontSize: 13,
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        children: state.connectedDevices
+                            .map(
+                              (device) => ListTile(
+                                dense: true,
+                                leading: const Icon(
+                                  Icons.computer,
+                                  color: Colors.blue,
+                                  size: 20,
+                                ),
+                                title: Text(
+                                  device.name,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                                subtitle: Text(
+                                  '最后活跃: ${_formatTime(device.lastActiveAt)}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(
+                                    Icons.link_off,
+                                    color: Colors.red,
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    ref
+                                        .read(pcConnectProvider.notifier)
+                                        .disconnectDevice(device.deviceId);
+                                  },
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+              ),
+            ],
           ),
-          if (state.connectedDevices.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Center(
-                child: Text(
-                  '暂无设备连接',
-                  style: TextStyle(color: WeChatColors.textHint, fontSize: 13),
-                ),
-              ),
-            )
-          else
-            ...state.connectedDevices.map(
-              (device) => ListTile(
-                leading: const Icon(Icons.computer, color: Colors.blue),
-                title: Text(device.name),
-                subtitle: Text(
-                  '最后活跃: ${_formatTime(device.lastActiveAt)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.link_off, color: Colors.red),
-                  onPressed: () {
-                    ref
-                        .read(pcConnectProvider.notifier)
-                        .disconnectDevice(device.deviceId);
-                  },
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -221,10 +334,11 @@ class QRCodePage extends ConsumerWidget {
     PcConnectState state,
   ) {
     return Card(
+      margin: const EdgeInsets.all(16),
       child: Column(
         children: [
           SwitchListTile(
-            title: const Text('禁止 PC 使用手机 API'),
+            title: const Text('禁止 PC 使用手机 API', style: TextStyle(fontSize: 14)),
             subtitle: const Text(
               '开启后 PC 只能使用独立配置',
               style: TextStyle(fontSize: 12),
@@ -233,10 +347,11 @@ class QRCodePage extends ConsumerWidget {
             onChanged: (value) {
               ref.read(pcConnectProvider.notifier).setAllowPCUseApi(!value);
             },
+            dense: true,
           ),
           const Divider(height: 1),
           SwitchListTile(
-            title: const Text('电脑断联后保持只读模式'),
+            title: const Text('电脑断联后保持只读模式', style: TextStyle(fontSize: 14)),
             subtitle: const Text(
               'PC 可查看历史消息但无法发送',
               style: TextStyle(fontSize: 12),
@@ -245,6 +360,7 @@ class QRCodePage extends ConsumerWidget {
             onChanged: (value) {
               ref.read(pcConnectProvider.notifier).setKeepPCReadOnly(value);
             },
+            dense: true,
           ),
         ],
       ),
@@ -259,28 +375,5 @@ class QRCodePage extends ConsumerWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
     if (diff.inHours < 24) return '${diff.inHours}小时前';
     return '${diff.inDays}天前';
-  }
-
-  void _showDisconnectAllDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('断开所有设备'),
-        content: const Text('确定要断开所有已连接的 PC 设备吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              ref.read(pcConnectProvider.notifier).disconnectAllDevices();
-              Navigator.of(context).pop();
-            },
-            child: const Text('确定', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
   }
 }

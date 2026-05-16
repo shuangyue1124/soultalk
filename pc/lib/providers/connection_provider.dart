@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 
 import '../websocket_client.dart';
 import '../sync_manager.dart';
@@ -15,6 +19,8 @@ class PCConnectionState {
   final ApiConfigMode apiMode;
   final ApiConfig? activeApiConfig;
   final String? error;
+  final String? pairingQrData;
+  final bool isPairingServerRunning;
 
   const PCConnectionState({
     this.connectionState = WsConnectionState.disconnected,
@@ -24,6 +30,8 @@ class PCConnectionState {
     this.apiMode = ApiConfigMode.followPhone,
     this.activeApiConfig,
     this.error,
+    this.pairingQrData,
+    this.isPairingServerRunning = false,
   });
 
   PCConnectionState copyWith({
@@ -34,6 +42,8 @@ class PCConnectionState {
     ApiConfigMode? apiMode,
     ApiConfig? activeApiConfig,
     String? error,
+    String? pairingQrData,
+    bool? isPairingServerRunning,
   }) {
     return PCConnectionState(
       connectionState: connectionState ?? this.connectionState,
@@ -43,6 +53,9 @@ class PCConnectionState {
       apiMode: apiMode ?? this.apiMode,
       activeApiConfig: activeApiConfig ?? this.activeApiConfig,
       error: error,
+      pairingQrData: pairingQrData ?? this.pairingQrData,
+      isPairingServerRunning:
+          isPairingServerRunning ?? this.isPairingServerRunning,
     );
   }
 }
@@ -56,6 +69,9 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
   StreamSubscription? _stateSubscription;
   StreamSubscription? _eventSubscription;
   StreamSubscription? _messagesSubscription;
+
+  HttpServer? _pairingServer;
+  String? _pairingCode;
 
   PCConnectionNotifier() : super(const PCConnectionState()) {
     _init();
@@ -77,6 +93,103 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
       apiMode: _configManager.mode,
       activeApiConfig: _configManager.activeConfig,
     );
+  }
+
+  /// 启动配对服务器，返回二维码数据
+  Future<String> startPairingServer() async {
+    _pairingCode = _generatePairingCode();
+    final rng = Random.secure();
+
+    const minPort = 49152;
+    const maxPort = 65535;
+    const maxRetries = 20;
+
+    for (int i = 0; i < maxRetries; i++) {
+      final port = minPort + rng.nextInt(maxPort - minPort + 1);
+      try {
+        _pairingServer = await HttpServer.bind(InternetAddress.anyIPv4, port);
+        break;
+      } on SocketException {
+        if (i == maxRetries - 1) rethrow;
+      }
+    }
+
+    if (_pairingServer == null) {
+      throw StateError('Failed to bind pairing server');
+    }
+
+    // 获取本机 IP
+    String? ip;
+    try {
+      ip = await NetworkInfo().getWifiIP();
+    } catch (_) {}
+    ip ??= '127.0.0.1';
+
+    final pairingUrl =
+        'http://$ip:${_pairingServer!.port}/pair?code=$_pairingCode';
+
+    // 监听配对请求
+    _pairingServer!.listen(_handlePairingRequest);
+
+    state = state.copyWith(
+      pairingQrData: pairingUrl,
+      isPairingServerRunning: true,
+      error: null,
+    );
+
+    return pairingUrl;
+  }
+
+  Future<void> _handlePairingRequest(HttpRequest request) async {
+    if (request.uri.path != '/pair' || request.method != 'POST') {
+      request.response.statusCode = 404;
+      await request.response.close();
+      return;
+    }
+
+    final code = request.uri.queryParameters['code'];
+    if (code != _pairingCode) {
+      request.response.statusCode = 403;
+      request.response.write('Invalid pairing code');
+      await request.response.close();
+      return;
+    }
+
+    try {
+      final body = await utf8.decodeStream(request);
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final wsUri = json['ws_uri'] as String?;
+
+      if (wsUri == null || !wsUri.startsWith('ws://')) {
+        request.response.statusCode = 400;
+        request.response.write('Invalid ws_uri');
+        await request.response.close();
+        return;
+      }
+
+      // 成功响应
+      request.response.statusCode = 200;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({'status': 'ok'}));
+      await request.response.close();
+
+      // 停止配对服务器
+      await _stopPairingServer();
+
+      // 连接手机
+      await connect(wsUri);
+    } catch (e) {
+      request.response.statusCode = 400;
+      request.response.write('Bad request');
+      await request.response.close();
+    }
+  }
+
+  Future<void> _stopPairingServer() async {
+    await _pairingServer?.close(force: true);
+    _pairingServer = null;
+    _pairingCode = null;
+    state = state.copyWith(isPairingServerRunning: false);
   }
 
   /// 连接到手机
@@ -168,6 +281,13 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
     }
   }
 
+  static String _generatePairingCode() {
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    final rng = Random.secure();
+    return List.generate(12, (_) => chars[rng.nextInt(chars.length)]).join();
+  }
+
   @override
   void dispose() {
     _stateSubscription?.cancel();
@@ -175,6 +295,7 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
     _messagesSubscription?.cancel();
     _client.dispose();
     _syncManager?.dispose();
+    _stopPairingServer();
     super.dispose();
   }
 }

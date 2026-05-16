@@ -223,13 +223,23 @@ class HomePage extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('手动连接'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'WebSocket 地址',
-            hintText: 'ws://192.168.1.100:12345/ws?token=xxx',
-          ),
+        title: const Text('手动连接（备用）'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '如无法扫码，可手动输入手机端的 WebSocket 地址：',
+              style: TextStyle(fontSize: 13, color: DesktopTheme.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'WebSocket 地址',
+                hintText: 'ws://192.168.1.100:12345/ws?token=xxx',
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(

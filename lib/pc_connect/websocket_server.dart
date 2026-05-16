@@ -138,7 +138,7 @@ class WebSocketServer {
 
           // 检查是否内网 IP
           final clientIp = _getClientIp(request);
-          if (clientIp != null && !_isPrivateIp(clientIp)) {
+          if (clientIp == null || !_isPrivateIp(clientIp)) {
             return shelf.Response.forbidden('Only LAN connections allowed');
           }
         }
@@ -275,15 +275,6 @@ class WebSocketServer {
   }
 
   void _handleAuth(String deviceId, Map<String, dynamic> message) {
-    final token = message['token'] as String?;
-    if (token == null || !_validateToken(token)) {
-      _connectionManager.sendMessage(deviceId, {
-        'type': 'auth_error',
-        'message': 'Invalid or expired token',
-      });
-      return;
-    }
-
     final deviceName = message['deviceName'] as String? ?? 'PC';
     _connectionManager.setDeviceName(deviceId, deviceName);
 

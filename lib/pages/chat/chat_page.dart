@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../models/contact.dart';
@@ -15,6 +18,7 @@ import '../../models/voice_config.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../services/chat/typing_simulator.dart';
 import '../../services/tts/tts_service.dart';
+import '../../services/stt/stt_service.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/input_bar.dart';
 import 'widgets/typing_indicator.dart';
@@ -31,9 +35,14 @@ class ChatPage extends ConsumerStatefulWidget {
 
 class _ChatPageState extends ConsumerState<ChatPage> {
   final _scrollController = ScrollController();
+  final _audioRecorder = AudioRecorder();
+  AudioPlayer? _currentTtsPlayer;
+  String? _currentTtsFilePath;
+  String? _recordingPath;
   bool _isSending = false;
   bool _isTyping = false;
   bool _isRecording = false;
+  bool _isTranscribing = false;
   bool _hasReceivedFirstChunk = false;
   bool _ttsEnabled = false;
   String? _lastUserText;
@@ -57,6 +66,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   void dispose() {
+    _stopRecording(deleteFile: true);
+    _audioRecorder.dispose();
+    _disposeTtsPlayer(deleteFile: true);
     _scrollController.dispose();
     super.dispose();
   }
@@ -113,18 +125,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               _delayedHideTyping();
             }
 
-            final msgs =
-                ref.read(messagesProvider(widget.contactId)).value ?? [];
-            if (msgs.isNotEmpty) {
-              final lastMsg = msgs.last;
-              if (lastMsg.role == MessageRole.assistant) {
-                messagesNotifier.updateLastMessage(
-                  lastMsg.id,
-                  content,
-                  isStreaming: !isDone,
-                );
-                _scrollToBottom(animated: false);
-              }
+            final aiMsgId = _lastAiMsgId;
+            if (aiMsgId != null) {
+              messagesNotifier.updateLastMessage(
+                aiMsgId,
+                content,
+                isStreaming: !isDone,
+              );
+              _scrollToBottom(animated: false);
             }
             if (isDone) {
               if (mounted) setState(() => _isSending = false);
@@ -206,10 +214,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         return;
       }
 
-      // Strip memory markers so internal instructions are never spoken
       final cleanText = TtsService.stripMemoryMarkers(text);
       if (cleanText.isEmpty) return;
 
+      await _disposeTtsPlayer(deleteFile: true);
       final service = TtsService();
       final filePath = await service.synthesize(ttsConfig, cleanText);
       if (filePath == null) {
@@ -224,22 +232,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         }
         return;
       }
-      if (!mounted) return;
+      if (!mounted) {
+        _deleteFile(filePath);
+        return;
+      }
 
       final player = AudioPlayer();
+      _currentTtsPlayer = player;
+      _currentTtsFilePath = filePath;
       await player.setFilePath(filePath);
       await player.play();
-      // Auto-dispose after playback completes
       player.processingStateStream
           .where((s) => s == ProcessingState.completed)
           .first
-          .then((_) {
-            player.dispose();
-            try {
-              File(filePath).delete();
-            } catch (_) {}
-          });
+          .then((_) => _disposeTtsPlayer(deleteFile: true));
     } catch (e) {
+      await _disposeTtsPlayer(deleteFile: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -252,12 +260,36 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  Future<void> _disposeTtsPlayer({required bool deleteFile}) async {
+    final player = _currentTtsPlayer;
+    final filePath = _currentTtsFilePath;
+    _currentTtsPlayer = null;
+    _currentTtsFilePath = null;
+    await player?.dispose();
+    if (deleteFile && filePath != null) {
+      _deleteFile(filePath);
+    }
+  }
+
+  void _deleteFile(String path) {
+    try {
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {}
+  }
+
   Future<void> _loadMore() async {
     final notifier = ref.read(messagesProvider(widget.contactId).notifier);
     await notifier.loadMore();
   }
 
   Future<void> _onMicTap() async {
+    if (_isTranscribing) return;
+    if (_isRecording) {
+      await _finishRecording();
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final sttConfig = await SttConfig.load(prefs);
     if (sttConfig.apiKey.isEmpty) {
@@ -276,27 +308,141 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
       return;
     }
-    setState(() => _isRecording = !_isRecording);
-    if (_isRecording) {
+
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status.isPermanentlyDenied
+                ? '麦克风权限已被永久拒绝，请在系统设置中开启'
+                : '需要麦克风权限才能录音',
+          ),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          action: status.isPermanentlyDenied
+              ? SnackBarAction(label: '去设置', onPressed: openAppSettings)
+              : null,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/stt_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path,
+      );
+      if (!mounted) {
+        await _stopRecording(deleteFile: true);
+        return;
+      }
+      setState(() {
+        _isRecording = true;
+        _recordingPath = path;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('开始录音，再次点击麦克风停止'),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: '取消',
+            onPressed: () => _cancelRecording(showMessage: true),
+          ),
+        ),
+      );
+    } catch (e) {
+      await _stopRecording(deleteFile: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('开始录音...（再次点击停止）'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text('录音启动失败: $e'),
+            duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
-    } else {
+    }
+  }
+
+  Future<void> _finishRecording() async {
+    final prefs = await SharedPreferences.getInstance();
+    final sttConfig = await SttConfig.load(prefs);
+    final path = await _stopRecording(deleteFile: false);
+    if (path == null) return;
+    if (!mounted) {
+      _deleteFile(path);
+      return;
+    }
+
+    setState(() => _isTranscribing = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('录音已停止，正在识别...'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    try {
+      final text = await SttService().transcribe(sttConfig, path);
+      if (!mounted) return;
+      final contact = ref
+          .read(contactsProvider)
+          .value
+          ?.where((c) => c.id == widget.contactId)
+          .firstOrNull;
+      if (contact == null) {
+        throw StateError('联系人不存在');
+      }
+      await _sendMessage(contact, text);
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('录音已停止，正在识别...'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text('语音识别失败: $e'),
+            duration: const Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
+    } finally {
+      _deleteFile(path);
+      if (mounted) setState(() => _isTranscribing = false);
+    }
+  }
+
+  Future<String?> _stopRecording({required bool deleteFile}) async {
+    String? path;
+    try {
+      path = await _audioRecorder.stop();
+    } catch (_) {
+      path = _recordingPath;
+    }
+    path ??= _recordingPath;
+    _recordingPath = null;
+    if (mounted) setState(() => _isRecording = false);
+    if (deleteFile && path != null) {
+      _deleteFile(path);
+    }
+    return path;
+  }
+
+  Future<void> _cancelRecording({required bool showMessage}) async {
+    await _stopRecording(deleteFile: true);
+    if (mounted && showMessage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已取消录音'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -527,7 +673,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 _sendSpecialMessage(contact, type, metadata),
             onSendImage: (path) => _sendImageMessage(contact, path),
             onMicTap: _onMicTap,
-            enabled: !_isSending,
+            enabled: !_isSending && !_isTranscribing,
             isRecording: _isRecording,
           ),
         ],

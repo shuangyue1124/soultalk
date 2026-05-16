@@ -3,6 +3,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 文件读写（用于导入角色卡 PNG/JSON） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <!-- 相机权限（用于扫描 PC 端二维码） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 麦克风权限（用于语音输入/STT） -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:label="SoulTalk"

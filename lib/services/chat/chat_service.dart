@@ -73,6 +73,12 @@ class ChatService {
   Future<List<Message>> getMessages(String contactId) =>
       _messageDao.getByContact(contactId);
 
+  Future<List<Message>> getMessagePage(
+    String contactId, {
+    required int limit,
+    required int offset,
+  }) => _messageDao.getPageByContact(contactId, limit: limit, offset: offset);
+
   Future<Message> saveMessage(Message message) async {
     final saved = await _messageDao.insert(message);
     await _contactDao.updateLastMessage(
@@ -209,28 +215,36 @@ class ChatService {
     final buffer = StringBuffer();
     final reasoningBuf = StringBuffer();
     try {
-      await for (final chunk in service.sendMessageStream(
-        config: config,
-        messages: contextMessages,
-        systemPrompt: systemPrompt,
-      )) {
-        // Reasoning content must not enter the display buffer
-        if (chunk.startsWith('\x00__R__\x00')) {
-          reasoningBuf.write(chunk.substring('\x00__R__\x00'.length));
-          continue;
+      if (config.streamEnabled) {
+        await for (final chunk in service.sendMessageStream(
+          config: config,
+          messages: contextMessages,
+          systemPrompt: systemPrompt,
+        )) {
+          if (chunk.startsWith('\x00__R__\x00')) {
+            reasoningBuf.write(chunk.substring('\x00__R__\x00'.length));
+            continue;
+          }
+          buffer.write(chunk);
+          await _messageDao.updateContent(
+            aiMsgId,
+            buffer.toString(),
+            isStreaming: true,
+          );
+          onAiChunk(buffer.toString(), false);
         }
-        buffer.write(chunk);
-        await _messageDao.updateContent(
-          aiMsgId,
-          buffer.toString(),
-          isStreaming: true,
+      } else {
+        buffer.write(
+          await service.sendMessage(
+            config: config,
+            messages: contextMessages,
+            systemPrompt: systemPrompt,
+          ),
         );
-        onAiChunk(buffer.toString(), false);
       }
 
       String finalAiContent = buffer.toString();
 
-      // Separate memory markers from user-visible content
       final stripped = MemoryService.stripMemoryMarkers(finalAiContent);
       String displayContent = stripped.displayText;
       displayContent = _regexService.applyScripts(
@@ -239,8 +253,6 @@ class ChatService {
         RegexPlacement.aiOutput,
       );
 
-      // If model only produced thinking without final answer,
-      // show the thinking as content so the bubble is not empty
       final reasoningText = reasoningBuf.toString();
       if (displayContent.isEmpty && reasoningText.isNotEmpty) {
         displayContent = '[思考完成，但模型未输出文本回复]';
@@ -251,7 +263,6 @@ class ChatService {
         displayContent,
         isStreaming: false,
       );
-      // Store reasoning as message metadata for collapsible display
       if (reasoningText.isNotEmpty) {
         await _messageDao.updateMetadata(
           aiMsgId,
@@ -266,7 +277,6 @@ class ChatService {
         DateTime.now(),
       );
 
-      // ── Memory pipeline: after response (uses raw content with markers) ─
       try {
         await _memoryService.afterResponse(
           contactId: contact.id,
@@ -276,7 +286,6 @@ class ChatService {
 
       _tryExtractMemory(contact, config);
     } catch (e) {
-      // Keep AI message empty so UI can detect failure and offer retry
       await _messageDao.updateContent(aiMsgId, '', isStreaming: false);
       onError?.call(e.toString());
     }

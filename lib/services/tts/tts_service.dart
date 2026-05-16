@@ -16,14 +16,18 @@ class TtsService {
   /// Returns null on any failure so callers can silently fall back.
   Future<String?> synthesize(TtsConfig config, String text) async {
     if (text.trim().isEmpty) return null;
-    final bytes = await _requestTts(config, text);
-    final dir = await getTemporaryDirectory();
-    final ext = config.audioFormat.isNotEmpty ? config.audioFormat : 'mp3';
-    final file = File(
-      '${dir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.$ext',
-    );
-    await file.writeAsBytes(bytes);
-    return file.path;
+    try {
+      final bytes = await _requestTts(config, text);
+      final dir = await getTemporaryDirectory();
+      final ext = config.audioFormat.isNotEmpty ? config.audioFormat : 'mp3';
+      final file = File(
+        '${dir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.$ext',
+      );
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Uint8List> _requestTts(TtsConfig config, String text) async {

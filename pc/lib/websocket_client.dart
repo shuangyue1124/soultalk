@@ -15,6 +15,7 @@ class WebSocketClient {
   String? _deviceId;
   String? _serverUrl;
   bool _isAuthenticated = false;
+  bool _disposed = false;
   int _reconnectAttempts = 0;
   static const int _maxReconnectAttempts = 10;
   static const Duration _heartbeatInterval = Duration(seconds: 30);
@@ -34,13 +35,14 @@ class WebSocketClient {
 
   /// 连接到手机端 WebSocket 服务器
   Future<void> connect(String url) async {
+    if (_disposed) return;
     if (_channel != null) {
       await disconnect();
     }
 
     _serverUrl = url;
     _currentState = WsConnectionState.connecting;
-    _stateController.add(_currentState);
+    _emitState();
 
     try {
       _channel = WebSocketChannel.connect(Uri.parse(url));
@@ -64,16 +66,19 @@ class WebSocketClient {
     _reconnectTimer?.cancel();
     _reconnectAttempts = 0;
 
-    if (_channel != null) {
-      _sendMessage({'type': 'disconnect'});
-      await _channel!.sink.close();
-      _channel = null;
+    final channel = _channel;
+    _channel = null;
+    if (channel != null) {
+      if (!_disposed) {
+        _sendMessage({'type': 'disconnect'});
+      }
+      await channel.sink.close();
     }
 
     _isAuthenticated = false;
     _deviceId = null;
     _currentState = WsConnectionState.disconnected;
-    _stateController.add(_currentState);
+    _emitState();
   }
 
   /// 请求同步消息
@@ -110,9 +115,10 @@ class WebSocketClient {
   }
 
   void _sendMessage(Map<String, dynamic> message) {
-    if (_channel == null) return;
+    final channel = _channel;
+    if (channel == null) return;
     try {
-      _channel!.sink.add(jsonEncode(message));
+      channel.sink.add(jsonEncode(message));
     } catch (e) {
       _onError(e);
     }
@@ -140,7 +146,7 @@ class WebSocketClient {
         case 'disconnect':
         case 'pong':
         case 'error':
-          _eventController.add(message);
+          _emitEvent(message);
           break;
       }
     } catch (e) {
@@ -153,17 +159,17 @@ class WebSocketClient {
     _isAuthenticated = true;
     _reconnectAttempts = 0;
     _currentState = WsConnectionState.connected;
-    _stateController.add(_currentState);
+    _emitState();
 
     _startHeartbeat();
-    _eventController.add(message);
+    _emitEvent(message);
   }
 
   void _handleAuthError(Map<String, dynamic> message) {
     _isAuthenticated = false;
     _currentState = WsConnectionState.authFailed;
-    _stateController.add(_currentState);
-    _eventController.add(message);
+    _emitState();
+    _emitEvent(message);
   }
 
   void _onDisconnected() {
@@ -173,7 +179,7 @@ class WebSocketClient {
 
     if (_currentState == WsConnectionState.connected) {
       _currentState = WsConnectionState.disconnected;
-      _stateController.add(_currentState);
+      _emitState();
       _tryReconnect();
     }
   }
@@ -181,9 +187,9 @@ class WebSocketClient {
   void _onError(dynamic error) {
     if (_currentState != WsConnectionState.connected) {
       _currentState = WsConnectionState.failed;
-      _stateController.add(_currentState);
+      _emitState();
     }
-    _eventController.add({'type': 'error', 'message': error.toString()});
+    _emitEvent({'type': 'error', 'message': error.toString()});
   }
 
   void _startHeartbeat() {
@@ -194,28 +200,42 @@ class WebSocketClient {
   }
 
   void _tryReconnect() {
+    if (_disposed) return;
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       _currentState = WsConnectionState.failed;
-      _stateController.add(_currentState);
+      _emitState();
       return;
     }
 
     _reconnectAttempts++;
     _currentState = WsConnectionState.reconnecting;
-    _stateController.add(_currentState);
+    _emitState();
 
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(_reconnectDelay, () {
-      if (_serverUrl != null) {
+      if (!_disposed && _serverUrl != null) {
         connect(_serverUrl!);
       }
     });
   }
 
-  void dispose() {
-    disconnect();
-    _eventController.close();
-    _stateController.close();
+  void _emitState() {
+    if (!_disposed && !_stateController.isClosed) {
+      _stateController.add(_currentState);
+    }
+  }
+
+  void _emitEvent(Map<String, dynamic> event) {
+    if (!_disposed && !_eventController.isClosed) {
+      _eventController.add(event);
+    }
+  }
+
+  Future<void> dispose() async {
+    _disposed = true;
+    await disconnect();
+    await _eventController.close();
+    await _stateController.close();
   }
 }
 

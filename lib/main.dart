@@ -39,12 +39,17 @@ void main() async {
   AutoBackupService().init();
 
   runApp(
-    UncontrolledProviderScope(container: container, child: const SoulTalkApp()),
+    UncontrolledProviderScope(
+      container: container,
+      child: SoulTalkApp(container: container),
+    ),
   );
 }
 
 class SoulTalkApp extends ConsumerStatefulWidget {
-  const SoulTalkApp({super.key});
+  final ProviderContainer container;
+
+  const SoulTalkApp({super.key, required this.container});
 
   @override
   ConsumerState<SoulTalkApp> createState() => _SoulTalkAppState();
@@ -61,6 +66,9 @@ class _SoulTalkAppState extends ConsumerState<SoulTalkApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    ProactiveService().dispose();
+    AutoBackupService().dispose();
+    widget.container.dispose();
     super.dispose();
   }
 

@@ -76,6 +76,23 @@ class MessageDao {
     return rows.reversed.map(_fromMap).toList();
   }
 
+  Future<List<Message>> getPageByContact(
+    String contactId, {
+    required int limit,
+    required int offset,
+  }) async {
+    final db = await _database;
+    final rows = await db.query(
+      'messages',
+      where: 'contact_id = ?',
+      whereArgs: [contactId],
+      orderBy: 'created_at DESC',
+      limit: limit,
+      offset: offset,
+    );
+    return rows.reversed.map(_fromMap).toList();
+  }
+
   Future<Message> insert(Message message) async {
     final db = await _database;
     final now = DateTime.now();

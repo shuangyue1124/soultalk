@@ -11,30 +11,45 @@ class ContactsNotifier extends AsyncNotifier<List<Contact>> {
   }
 
   Future<void> add(Contact contact) async {
-    final service = ref.read(chatServiceProvider);
-    final created = await service.createContact(contact);
-    state = AsyncData([created, ...?state.value]);
+    final previous = state;
+    state = await AsyncValue.guard(() async {
+      final service = ref.read(chatServiceProvider);
+      final created = await service.createContact(contact);
+      return [created, ...?previous.value];
+    });
   }
 
   Future<Contact> addAndReturn(Contact contact) async {
     final service = ref.read(chatServiceProvider);
-    final created = await service.createContact(contact);
-    state = AsyncData([created, ...?state.value]);
-    return created;
+    try {
+      final created = await service.createContact(contact);
+      state = AsyncData([created, ...?state.value]);
+      return created;
+    } catch (e, stackTrace) {
+      state = AsyncError(e, stackTrace);
+      rethrow;
+    }
   }
 
   Future<void> updateContact(Contact contact) async {
-    final service = ref.read(chatServiceProvider);
-    await service.updateContact(contact);
-    state = AsyncData(
-      state.value?.map((c) => c.id == contact.id ? contact : c).toList() ?? [],
-    );
+    final previous = state;
+    state = await AsyncValue.guard(() async {
+      final service = ref.read(chatServiceProvider);
+      await service.updateContact(contact);
+      return previous.value
+              ?.map((c) => c.id == contact.id ? contact : c)
+              .toList() ??
+          [];
+    });
   }
 
   Future<void> remove(String id) async {
-    final service = ref.read(chatServiceProvider);
-    await service.deleteContact(id);
-    state = AsyncData(state.value?.where((c) => c.id != id).toList() ?? []);
+    final previous = state;
+    state = await AsyncValue.guard(() async {
+      final service = ref.read(chatServiceProvider);
+      await service.deleteContact(id);
+      return previous.value?.where((c) => c.id != id).toList() ?? [];
+    });
   }
 
   Future<void> refresh() async {
@@ -63,14 +78,16 @@ class ContactsNotifier extends AsyncNotifier<List<Contact>> {
   }
 
   Future<void> clearUnread(String contactId) async {
-    await ref.read(chatServiceProvider).clearUnread(contactId);
-    final list = state.value ?? [];
-    final idx = list.indexWhere((c) => c.id == contactId);
-    if (idx >= 0) {
+    final previous = state;
+    state = await AsyncValue.guard(() async {
+      await ref.read(chatServiceProvider).clearUnread(contactId);
+      final list = previous.value ?? [];
+      final idx = list.indexWhere((c) => c.id == contactId);
+      if (idx < 0) return list;
       final newList = List<Contact>.from(list);
       newList[idx] = newList[idx].copyWith(unreadCount: 0);
-      state = AsyncData(newList);
-    }
+      return newList;
+    });
   }
 }
 
