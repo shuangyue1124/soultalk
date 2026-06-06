@@ -3,10 +3,16 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import 'websocket_client.dart';
+import 'sync/pull_sync_service.dart';
+import 'sync/push_sync_service.dart';
+import 'services/database/pc_mirror_dao.dart';
 
 /// 同步管理器 - 处理与手机端的消息同步
 class SyncManager {
   final WebSocketClient _client;
+  late final PullSyncService _pullSyncService;
+  late final PushSyncService _pushSyncService;
+  final PcMirrorDao _mirrorDao;
   final List<Map<String, dynamic>> _messages = [];
   String? _lastSyncTime;
 
@@ -22,14 +28,18 @@ class SyncManager {
   List<Map<String, dynamic>> get messages => List.unmodifiable(_messages);
   String? get lastSyncTime => _lastSyncTime;
 
-  SyncManager(this._client) {
+  SyncManager(this._client, {PcMirrorDao? mirrorDao})
+    : _mirrorDao = mirrorDao ?? PcMirrorDao() {
+    _pullSyncService = PullSyncService(client: _client, mirrorDao: _mirrorDao);
+    _pushSyncService = PushSyncService(client: _client);
     _client.events.listen(_handleEvent);
   }
 
   /// 请求同步
   void requestSync() {
     _stateController.add(SyncState.syncing);
-    _client.requestSync(since: _lastSyncTime);
+    _pullSyncService.requestManifest();
+    _pullSyncService.requestTable('messages');
   }
 
   /// 检查同步状态
@@ -41,7 +51,7 @@ class SyncManager {
 
   /// 发送新消息
   void sendMessage(String contactId, String content) {
-    _client.sendMessage(contactId, content);
+    _pushSyncService.proposeMessage(contactId, content);
 
     // 本地添加消息
     final message = {
@@ -70,11 +80,22 @@ class SyncManager {
       case 'sync_check_result':
         _handleSyncCheckResult(event);
         break;
-      case 'sync_ready':
-        requestSync();
-        break;
       case 'new_message':
         _handleNewMessage(event);
+        break;
+      case 'manifest.response':
+        _stateController.add(SyncState.syncing);
+        break;
+      case 'pull.chunk':
+        _handlePullChunk(event);
+        break;
+      case 'pull.complete':
+        _stateController.add(SyncState.idle);
+        break;
+      case 'push.result':
+        if (((event['payload'] as Map?)?['accepted'] as bool?) == false) {
+          _stateController.add(SyncState.error);
+        }
         break;
     }
   }
@@ -104,6 +125,15 @@ class SyncManager {
     _lastSyncTime =
         data['serverTime'] as String? ?? DateTime.now().toIso8601String();
     _stateController.add(SyncState.idle);
+  }
+
+  Future<void> _handlePullChunk(Map<String, dynamic> event) async {
+    await _pullSyncService.handlePullChunk(event);
+    final rows = await _mirrorDao.getRows('messages');
+    _messages
+      ..clear()
+      ..addAll(rows);
+    _messagesController.add(_messages);
   }
 
   void _handleSyncCheckResult(Map<String, dynamic> event) {

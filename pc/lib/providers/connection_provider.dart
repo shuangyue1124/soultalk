@@ -81,6 +81,9 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
     await _configManager.init();
 
     _stateSubscription = _client.stateStream.listen((connectionState) {
+      if (!mounted) {
+        return;
+      }
       state = state.copyWith(
         connectionState: connectionState,
         deviceId: _client.deviceId,
@@ -89,6 +92,9 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
 
     _eventSubscription = _client.events.listen(_handleEvent);
 
+    if (!mounted) {
+      return;
+    }
     state = state.copyWith(
       apiMode: _configManager.mode,
       activeApiConfig: _configManager.activeConfig,
@@ -185,11 +191,13 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
     }
   }
 
-  Future<void> _stopPairingServer() async {
+  Future<void> _stopPairingServer({bool updateState = true}) async {
     await _pairingServer?.close(force: true);
     _pairingServer = null;
     _pairingCode = null;
-    state = state.copyWith(isPairingServerRunning: false);
+    if (updateState && mounted) {
+      state = state.copyWith(isPairingServerRunning: false);
+    }
   }
 
   /// 连接到手机
@@ -247,6 +255,9 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
   }
 
   void _handleEvent(Map<String, dynamic> event) {
+    if (!mounted) {
+      return;
+    }
     final type = event['type'] as String?;
 
     switch (type) {
@@ -295,7 +306,7 @@ class PCConnectionNotifier extends StateNotifier<PCConnectionState> {
     _messagesSubscription?.cancel();
     _client.dispose();
     _syncManager?.dispose();
-    _stopPairingServer();
+    _stopPairingServer(updateState: false);
     super.dispose();
   }
 }

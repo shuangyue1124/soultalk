@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ class InputBar extends ConsumerStatefulWidget {
   final void Function(String type, Map<String, dynamic> metadata)?
   onSendSpecial;
   final void Function(String path) onSendImage;
+  final void Function(String path) onSendFile;
   final VoidCallback? onMicTap;
   final bool enabled;
   final bool isRecording;
@@ -19,6 +21,7 @@ class InputBar extends ConsumerStatefulWidget {
     required this.onSend,
     this.onSendSpecial,
     required this.onSendImage,
+    required this.onSendFile,
     this.onMicTap,
     this.enabled = true,
     this.isRecording = false,
@@ -69,6 +72,14 @@ class _InputBarState extends ConsumerState<InputBar> {
     }
   }
 
+  Future<void> _pickAndSendFile() async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+    if (path != null) {
+      widget.onSendFile(path);
+    }
+  }
+
   void _showPlusMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -113,6 +124,15 @@ class _InputBarState extends ConsumerState<InputBar> {
                 onTap: () {
                   Navigator.of(ctx).pop();
                   _pickAndSendImage();
+                },
+              ),
+              _PlusMenuItem(
+                icon: Icons.insert_drive_file_outlined,
+                label: '文件',
+                color: const Color(0xFF8E8E93),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickAndSendFile();
                 },
               ),
               _PlusMenuItem(

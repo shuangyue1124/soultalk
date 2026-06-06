@@ -8,6 +8,7 @@ enum MessageRole { user, assistant, system }
 enum MessageType {
   text,
   image,
+  file,
   transfer, // 虚拟转账
   delivery, // 虚拟外卖
   system, // 系统消息

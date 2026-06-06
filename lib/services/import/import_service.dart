@@ -77,7 +77,11 @@ class ImportService {
 
     final json = jsonResult.data!;
 
-    final data = json['data'] as Map<String, dynamic>? ?? json;
+    final dataValue = json['data'];
+    if (dataValue != null && dataValue is! Map<String, dynamic>) {
+      return ImportValidationResult.fail('角色卡字段 "data" 应为对象');
+    }
+    final data = dataValue ?? json;
 
     final name = data['name'] as String? ?? '';
     if (name.isEmpty) {

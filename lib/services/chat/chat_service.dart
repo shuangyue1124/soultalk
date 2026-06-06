@@ -16,6 +16,7 @@ import '../api/context_manager.dart';
 import '../api/prompt_assembly_service.dart';
 import '../memory/memory_service.dart';
 import '../regex/regex_service.dart';
+import '../extensions/extension_event_bus.dart';
 import '../../models/contact.dart';
 import '../../models/message.dart';
 import '../../models/api_config.dart';
@@ -168,6 +169,17 @@ class ChatService {
     );
 
     onMessagesCreated(userMsg, aiMsgPlaceholder);
+    ExtensionEventBus.instance.publishType(
+      'message_sent',
+      contactId: contact.id,
+      messageId: userMsg.id,
+      payload: {'content': processedUserText},
+    );
+    ExtensionEventBus.instance.publishType(
+      'generation_started',
+      contactId: contact.id,
+      messageId: aiMsgPlaceholder.id,
+    );
 
     final history = await _messageDao.getRecentByContact(contact.id, 40);
     final contextMessages = _contextManager.trim(
@@ -180,6 +192,15 @@ class ChatService {
       history: history.where((m) => !m.isStreaming).toList(),
     );
     String? systemPrompt = assembled.systemPrompt;
+    final postHistoryPrompt = assembled.postHistoryPrompt?.trim();
+    if (postHistoryPrompt != null && postHistoryPrompt.isNotEmpty) {
+      final currentSystemPrompt = systemPrompt?.trim();
+      final separator = String.fromCharCodes([10, 10]);
+      systemPrompt = currentSystemPrompt == null || currentSystemPrompt.isEmpty
+          ? postHistoryPrompt
+          : [currentSystemPrompt, postHistoryPrompt].join(separator);
+    }
+    final requestMessages = contextMessages;
 
     // ── Memory pipeline: before request ──────────────────────────────
     try {
@@ -218,7 +239,7 @@ class ChatService {
       if (config.streamEnabled) {
         await for (final chunk in service.sendMessageStream(
           config: config,
-          messages: contextMessages,
+          messages: requestMessages,
           systemPrompt: systemPrompt,
         )) {
           if (chunk.startsWith('\x00__R__\x00')) {
@@ -231,13 +252,19 @@ class ChatService {
             buffer.toString(),
             isStreaming: true,
           );
+          ExtensionEventBus.instance.publishType(
+            'message_stream_chunk',
+            contactId: contact.id,
+            messageId: aiMsgId,
+            payload: {'content': buffer.toString(), 'delta': chunk},
+          );
           onAiChunk(buffer.toString(), false);
         }
       } else {
         buffer.write(
           await service.sendMessage(
             config: config,
-            messages: contextMessages,
+            messages: requestMessages,
             systemPrompt: systemPrompt,
           ),
         );
@@ -270,6 +297,17 @@ class ChatService {
         );
       }
       onAiChunk(displayContent, true);
+      ExtensionEventBus.instance.publishType(
+        'message_received',
+        contactId: contact.id,
+        messageId: aiMsgId,
+        payload: {'content': displayContent},
+      );
+      ExtensionEventBus.instance.publishType(
+        'generation_completed',
+        contactId: contact.id,
+        messageId: aiMsgId,
+      );
 
       await _contactDao.updateLastMessage(
         contact.id,
@@ -287,6 +325,12 @@ class ChatService {
       _tryExtractMemory(contact, config);
     } catch (e) {
       await _messageDao.updateContent(aiMsgId, '', isStreaming: false);
+      ExtensionEventBus.instance.publishType(
+        'generation_failed',
+        contactId: contact.id,
+        messageId: aiMsgId,
+        payload: {'error': e.toString()},
+      );
       onError?.call(e.toString());
     }
   }

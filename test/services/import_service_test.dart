@@ -81,6 +81,17 @@ void main() {
         expect(result.error, contains('JSON'));
       });
 
+      test('rejects non-object data field', () {
+        final json = '''{
+          "data": "not an object"
+        }''';
+
+        final result = ImportService.validateCharacterCard(json);
+
+        expect(result.isValid, isFalse);
+        expect(result.error, contains('data'));
+      });
+
       test('handles BOM in content', () {
         final bom = String.fromCharCodes([0xFEFF]);
         final json = '$bom{"data":{"name":"Test"}}';

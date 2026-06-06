@@ -1,19 +1,34 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
+import '../services/database/database_service.dart';
+
 /// 处理消息同步相关逻辑
 class SyncHandler {
+  final DatabaseService dbService;
+
+  SyncHandler({DatabaseService? dbService})
+    : dbService = dbService ?? DatabaseService();
+
   /// 获取同步数据
   Future<Map<String, dynamic>> getSyncData({
     DateTime? since,
     int limit = 20,
   }) async {
-    // 【推测】实际实现需要从数据库查询消息
-    // 这里返回模拟数据结构
+    final db = await dbService.database;
+    final where = since == null ? null : 'created_at > ?';
+    final whereArgs = since == null ? null : [since.toIso8601String()];
+    final messages = await db.query(
+      'messages',
+      where: where,
+      whereArgs: whereArgs,
+      orderBy: 'created_at ASC, id ASC',
+      limit: limit,
+    );
     return {
-      'messages': <Map<String, dynamic>>[],
+      'messages': messages,
       'serverTime': DateTime.now().toIso8601String(),
-      'hasMore': false,
+      'hasMore': messages.length == limit,
     };
   }
 
@@ -88,7 +103,12 @@ class SyncHandler {
   }
 
   Future<void> _replaceMessage(String messageId, String content) async {
-    // 【推测】实际实现需要更新数据库
-    // await database.updateMessage(messageId, content);
+    final db = await dbService.database;
+    await db.update(
+      'messages',
+      {'content': content},
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
   }
 }

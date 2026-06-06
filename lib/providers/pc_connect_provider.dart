@@ -23,6 +23,9 @@ class PcConnectState {
   final bool allowPCUseApi;
   final bool keepPCReadOnly;
   final PairingState pairingState;
+  final String? statusMessage;
+  final String? errorMessage;
+  final DateTime? qrExpiresAt;
 
   const PcConnectState({
     this.isEnabled = false,
@@ -34,6 +37,9 @@ class PcConnectState {
     this.allowPCUseApi = true,
     this.keepPCReadOnly = true,
     this.pairingState = PairingState.idle,
+    this.statusMessage,
+    this.errorMessage,
+    this.qrExpiresAt,
   });
 
   PcConnectState copyWith({
@@ -46,6 +52,9 @@ class PcConnectState {
     bool? allowPCUseApi,
     bool? keepPCReadOnly,
     PairingState? pairingState,
+    String? statusMessage,
+    String? errorMessage,
+    DateTime? qrExpiresAt,
   }) {
     return PcConnectState(
       isEnabled: isEnabled ?? this.isEnabled,
@@ -57,6 +66,9 @@ class PcConnectState {
       allowPCUseApi: allowPCUseApi ?? this.allowPCUseApi,
       keepPCReadOnly: keepPCReadOnly ?? this.keepPCReadOnly,
       pairingState: pairingState ?? this.pairingState,
+      statusMessage: statusMessage ?? this.statusMessage,
+      errorMessage: errorMessage,
+      qrExpiresAt: qrExpiresAt ?? this.qrExpiresAt,
     );
   }
 }
@@ -107,9 +119,16 @@ class PcConnectNotifier extends StateNotifier<PcConnectState> {
         port: port,
         localIp: ip,
         qrData: _server.getConnectionUri(ip ?? '0.0.0.0'),
+        qrExpiresAt: DateTime.now().add(const Duration(minutes: 2)),
+        statusMessage: '等待 PC 扫码连接',
+        errorMessage: null,
       );
     } catch (e) {
-      state = state.copyWith(isServerRunning: false);
+      state = state.copyWith(
+        isServerRunning: false,
+        statusMessage: '服务启动失败',
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -176,6 +195,9 @@ class PcConnectNotifier extends StateNotifier<PcConnectState> {
     _server.refreshToken();
     state = state.copyWith(
       qrData: _server.getConnectionUri(state.localIp ?? '0.0.0.0'),
+      qrExpiresAt: DateTime.now().add(const Duration(minutes: 2)),
+      statusMessage: '二维码已刷新',
+      errorMessage: null,
     );
   }
 
@@ -224,14 +246,22 @@ class PcConnectNotifier extends StateNotifier<PcConnectState> {
           isServerRunning: false,
           port: null,
           qrData: null,
+          qrExpiresAt: null,
+          statusMessage: '服务已因空闲自动关闭',
+          errorMessage: null,
         );
         break;
     }
   }
 
   void _updateConnectedDevices() {
+    final devices = _server.connectionManager.connectedDevices;
     state = state.copyWith(
-      connectedDevices: _server.connectionManager.connectedDevices,
+      connectedDevices: devices,
+      statusMessage: devices.isEmpty
+          ? '等待 PC 连接'
+          : '已连接 ${devices.length} 台 PC',
+      errorMessage: null,
     );
   }
 

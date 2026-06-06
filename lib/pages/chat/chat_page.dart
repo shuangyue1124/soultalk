@@ -19,6 +19,7 @@ import '../../widgets/avatar_widget.dart';
 import '../../services/chat/typing_simulator.dart';
 import '../../services/tts/tts_service.dart';
 import '../../services/stt/stt_service.dart';
+import '../../services/file_send/attachment_service.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/input_bar.dart';
 import 'widgets/typing_indicator.dart';
@@ -527,24 +528,71 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  Future<void> _sendImageMessage(Contact contact, String imagePath) async {
+  Future<void> _sendImageMessage(String imagePath) {
+    return _sendAttachmentMessage(
+      sourcePath: imagePath,
+      type: MessageType.image,
+      failureMessage: '图片发送失败',
+    );
+  }
+
+  Future<void> _sendFileMessage(String filePath) {
+    return _sendAttachmentMessage(
+      sourcePath: filePath,
+      type: MessageType.file,
+      failureMessage: '文件发送失败',
+    );
+  }
+
+  Future<void> _sendAttachmentMessage({
+    required String sourcePath,
+    required MessageType type,
+    required String failureMessage,
+  }) async {
     final messagesNotifier = ref.read(
       messagesProvider(widget.contactId).notifier,
     );
-    final userMsg = Message(
-      id: '',
-      contactId: widget.contactId,
-      role: MessageRole.user,
-      content: imagePath,
-      type: MessageType.image,
-      metadata: {'path': imagePath},
-      createdAt: DateTime.now(),
-    );
-    final service = ref.read(chatServiceProvider);
-    final saved = await service.saveMessage(userMsg);
-    messagesNotifier.addMessage(saved);
-    _scrollToBottom(animated: true);
-    ref.read(contactsProvider.notifier).refresh();
+
+    try {
+      final attachmentService = await AttachmentService.create();
+      final record = await attachmentService.importFile(
+        chatId: widget.contactId,
+        source: File(sourcePath),
+        mimeType: AttachmentService.inferMimeType(sourcePath),
+      );
+      final userMsg = Message(
+        id: '',
+        contactId: widget.contactId,
+        role: MessageRole.user,
+        content: type == MessageType.image
+            ? record.relativePath
+            : record.originalName,
+        type: type,
+        metadata: {
+          'attachment': attachmentService.toChatExtra(record),
+          'relative_path': record.relativePath,
+        },
+        createdAt: DateTime.now(),
+      );
+      final service = ref.read(chatServiceProvider);
+      final saved = await service.saveMessage(userMsg);
+      await attachmentService.attachToMessage(
+        attachmentId: record.id,
+        messageId: saved.id,
+      );
+      messagesNotifier.addMessage(saved);
+      _scrollToBottom(animated: true);
+      ref.read(contactsProvider.notifier).refresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$failureMessage: $e'),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _sendSpecialMessage(
@@ -671,7 +719,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             onSend: (text) => _sendMessage(contact, text),
             onSendSpecial: (type, metadata) =>
                 _sendSpecialMessage(contact, type, metadata),
-            onSendImage: (path) => _sendImageMessage(contact, path),
+            onSendImage: _sendImageMessage,
+            onSendFile: _sendFileMessage,
             onMicTap: _onMicTap,
             enabled: !_isSending && !_isTranscribing,
             isRecording: _isRecording,

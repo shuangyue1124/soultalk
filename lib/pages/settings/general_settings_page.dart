@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import '../../models/chat_preset.dart';
@@ -239,6 +240,24 @@ class GeneralSettingsPage extends ConsumerWidget {
                         },
                       ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SectionHeader(title: '扩展'),
+              Container(
+                color: Colors.white,
+                child: ListTile(
+                  leading: const Icon(
+                    Icons.extension_outlined,
+                    color: WeChatColors.textSecondary,
+                  ),
+                  title: const Text('扩展管理'),
+                  subtitle: const Text('导入、启用或停用 SillyTavern 风格扩展'),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: WeChatColors.textHint,
+                  ),
+                  onTap: () => context.push('/settings/extensions'),
                 ),
               ),
               const SizedBox(height: 8),

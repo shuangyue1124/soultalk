@@ -4,10 +4,18 @@ import '../../models/contact.dart';
 import '../../models/message.dart';
 import '../../models/character_card.dart';
 import '../../models/prompt_system.dart';
+import '../../models/regex_script.dart';
 import '../regex/regex_service.dart';
+import '../st_compat/character/st_character_card_parser.dart';
+import '../st_compat/character/st_character_models.dart';
+import '../st_compat/regex/st_regex_mapper.dart';
+import '../st_compat/regex/st_regex_parser.dart';
 
 class PromptAssemblyService {
   final _regexService = const RegexService();
+  final _stCharacterParser = const STCharacterCardParser();
+  final _stRegexParser = STRegexParser();
+  final _stRegexMapper = STRegexMapper();
 
   Future<AssembledPrompt> assemble({
     required Contact contact,
@@ -22,6 +30,7 @@ class PromptAssemblyService {
     final userName_ = userName ?? prefs.getString('self_profile') ?? '用户';
 
     final characterCard = _parseCharacterCard(contact.characterCardJson);
+    final stCharacterCard = _parseSTCharacterCard(contact.characterCardJson);
 
     final wiBeforeEntries = <WorldInfoEntry>[];
     final wiAfterEntries = <WorldInfoEntry>[];
@@ -48,10 +57,16 @@ class PromptAssemblyService {
     final secondaryPrompt = promptPreset.secondaryPrompt;
     final postHistoryInstructions = promptPreset.postHistoryInstructions;
 
-    final description = characterCard?.description ?? '';
-    final personality = characterCard?.personality ?? '';
-    final scenario = characterCard?.scenario ?? '';
-    final charSystemPrompt = contact.systemPrompt;
+    final description =
+        stCharacterCard?.data.description ?? characterCard?.description ?? '';
+    final personality =
+        stCharacterCard?.data.personality ?? characterCard?.personality ?? '';
+    final scenario =
+        stCharacterCard?.data.scenario ?? characterCard?.scenario ?? '';
+    final stSystemPrompt = stCharacterCard?.data.systemPrompt ?? '';
+    final charSystemPrompt = contact.systemPrompt.isNotEmpty
+        ? contact.systemPrompt
+        : stSystemPrompt;
 
     final template = promptPreset.contextTemplate;
     final storyString = template.render({
@@ -70,12 +85,6 @@ class PromptAssemblyService {
 
     final parts = <String>[];
 
-    final globalEnabled = prefs.getBool('global_prompt_enabled') ?? true;
-    if (globalEnabled) {
-      final globalText = prefs.getString('global_prompt_text') ?? '';
-      if (globalText.isNotEmpty) parts.add(globalText);
-    }
-
     if (storyString.isNotEmpty) parts.add(storyString);
 
     if (secondaryPrompt.isNotEmpty) parts.add(secondaryPrompt);
@@ -91,6 +100,15 @@ class PromptAssemblyService {
     }
 
     var systemPrompt = parts.where((p) => p.isNotEmpty).join('\n\n');
+
+    final stRegexScripts = _loadSTRegexScripts(stCharacterCard);
+    if (stRegexScripts.isNotEmpty) {
+      systemPrompt = _regexService.applyScripts(
+        systemPrompt,
+        stRegexScripts,
+        RegexPlacement.worldInfo,
+      );
+    }
 
     // Append memory format instructions when memory is enabled
     final memoryEnabled = prefs.getBool('memory_enabled') ?? false;
@@ -111,6 +129,19 @@ class PromptAssemblyService {
     });
 
     final postHistoryParts = <String>[];
+    final stPostHistoryInstructions =
+        stCharacterCard?.data.postHistoryInstructions ?? '';
+    if (stPostHistoryInstructions.isNotEmpty) {
+      postHistoryParts.add(
+        stRegexScripts.isEmpty
+            ? stPostHistoryInstructions
+            : _regexService.applyScripts(
+                stPostHistoryInstructions,
+                stRegexScripts,
+                RegexPlacement.worldInfo,
+              ),
+      );
+    }
     if (postHistoryInstructions.isNotEmpty) {
       postHistoryParts.add(postHistoryInstructions);
     }
@@ -164,6 +195,45 @@ class PromptAssemblyService {
     } catch (_) {
       return null;
     }
+  }
+
+  STCharacterCard? _parseSTCharacterCard(String? jsonStr) {
+    if (jsonStr == null || jsonStr.isEmpty) return null;
+    try {
+      return _stCharacterParser.parseJsonString(jsonStr);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<RegexScript> _loadSTRegexScripts(STCharacterCard? card) {
+    final rawScripts = card?.data.extensions['regex_scripts'];
+    if (rawScripts == null) return const [];
+    try {
+      if (rawScripts is List) {
+        final scripts = rawScripts
+            .whereType<Map>()
+            .map(
+              (item) =>
+                  _stRegexParser.parseMap(Map<String, dynamic>.from(item)),
+            )
+            .toList();
+        return _stRegexMapper.toSoulTalkList(scripts);
+      }
+      if (rawScripts is Map) {
+        final scripts = rawScripts.values
+            .whereType<Map>()
+            .map(
+              (item) =>
+                  _stRegexParser.parseMap(Map<String, dynamic>.from(item)),
+            )
+            .toList();
+        return _stRegexMapper.toSoulTalkList(scripts);
+      }
+    } catch (_) {
+      return const [];
+    }
+    return const [];
   }
 
   Future<List<WorldInfoEntry>> _loadWorldInfo(

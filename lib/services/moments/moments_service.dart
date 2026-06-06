@@ -4,6 +4,7 @@ import '../database/contact_dao.dart';
 import '../database/moment_dao.dart';
 import '../database/api_config_dao.dart';
 import '../api/llm_service.dart';
+import '../extensions/extension_event_bus.dart';
 import '../../models/contact.dart';
 import '../../models/moment.dart';
 import '../../models/message.dart';
@@ -42,12 +43,28 @@ class MomentsService {
       await _momentDao.removeLike(momentId, userId);
     } else {
       await _momentDao.addLike(momentId, userId);
+      ExtensionEventBus.instance.publishType(
+        'moment_liked',
+        payload: {'momentId': momentId, 'userId': userId},
+        contactId: moment.contactId,
+      );
     }
   }
 
   Future<void> addComment(String momentId, MomentComment comment) async {
     init();
     await _momentDao.addComment(momentId, comment);
+    final moments = await _momentDao.getAll();
+    final moment = moments.where((m) => m.id == momentId).firstOrNull;
+    ExtensionEventBus.instance.publishType(
+      'moment_commented',
+      payload: {
+        'momentId': momentId,
+        'authorId': comment.authorId,
+        'content': comment.content,
+      },
+      contactId: moment?.contactId,
+    );
   }
 
   Future<String?> generateAiReply(
@@ -159,13 +176,18 @@ class MomentsService {
 
       if (content.trim().isEmpty) return;
 
-      await _momentDao.insert(
+      final moment = await _momentDao.insert(
         Moment(
           id: '',
           contactId: contact.id,
           content: content.trim(),
           createdAt: DateTime.now(),
         ),
+      );
+      ExtensionEventBus.instance.publishType(
+        'moment_created',
+        payload: {'momentId': moment.id, 'content': moment.content},
+        contactId: contact.id,
       );
     } catch (_) {}
   }

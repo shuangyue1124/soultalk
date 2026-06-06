@@ -11,6 +11,7 @@ import '../pages/discover/moments_page.dart';
 import '../pages/profile/profile_page.dart';
 import '../pages/settings/api_settings_page.dart';
 import '../pages/settings/general_settings_page.dart';
+import '../pages/settings/extension_settings_page.dart';
 import '../pages/delivery/delivery_page.dart';
 import '../pages/memory/memory_page.dart';
 import '../pages/settings/update_page.dart';
@@ -85,6 +86,11 @@ final appRouter = GoRouter(
       path: '/settings/general',
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const GeneralSettingsPage(),
+    ),
+    GoRoute(
+      path: '/settings/extensions',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ExtensionSettingsPage(),
     ),
     GoRoute(
       path: '/discover/moments',

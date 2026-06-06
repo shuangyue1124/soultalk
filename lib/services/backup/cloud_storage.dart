@@ -5,11 +5,8 @@ import 'package:crypto/crypto.dart';
 
 // ─── 配置模型 ────────────────────────────────────────────────────────────────────
 
-enum CloudType { webdav, s3 }
-
 abstract class CloudStorageConfig {
   const CloudStorageConfig();
-  Map<String, dynamic> toJson();
 }
 
 class WebDavConfig extends CloudStorageConfig {
@@ -22,20 +19,6 @@ class WebDavConfig extends CloudStorageConfig {
     required this.username,
     required this.password,
   });
-
-  @override
-  Map<String, dynamic> toJson() => {
-    'type': 'webdav',
-    'url': url,
-    'username': username,
-    'password': password,
-  };
-
-  factory WebDavConfig.fromJson(Map<String, dynamic> json) => WebDavConfig(
-    url: json['url'] as String,
-    username: json['username'] as String,
-    password: json['password'] as String,
-  );
 }
 
 class S3Config extends CloudStorageConfig {
@@ -52,24 +35,6 @@ class S3Config extends CloudStorageConfig {
     required this.secretKey,
     required this.bucket,
   });
-
-  @override
-  Map<String, dynamic> toJson() => {
-    'type': 's3',
-    'endpoint': endpoint,
-    'region': region,
-    'accessKey': accessKey,
-    'secretKey': secretKey,
-    'bucket': bucket,
-  };
-
-  factory S3Config.fromJson(Map<String, dynamic> json) => S3Config(
-    endpoint: json['endpoint'] as String,
-    region: json['region'] as String,
-    accessKey: json['accessKey'] as String,
-    secretKey: json['secretKey'] as String,
-    bucket: json['bucket'] as String,
-  );
 }
 
 // ─── 抽象接口 ────────────────────────────────────────────────────────────────────
@@ -79,12 +44,6 @@ abstract class CloudStorage {
   Future<bool> upload(String localPath, String remoteName);
   Future<String?> download(String remoteName, String localPath);
   Future<List<String>> listBackups();
-
-  static CloudStorage fromConfig(CloudStorageConfig config) {
-    if (config is WebDavConfig) return WebDavStorage(config);
-    if (config is S3Config) return S3Storage(config);
-    throw ArgumentError('Unknown config type: ${config.runtimeType}');
-  }
 }
 
 // ─── WebDAV 实现 ──────────────────────────────────────────────────────────────────

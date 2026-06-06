@@ -78,10 +78,57 @@ class _QRCodePageState extends ConsumerState<QRCodePage> {
       ),
       body: Column(
         children: [
+          if (connectState.qrData != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '手动连接地址: ${connectState.qrData}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        ref.read(pcConnectProvider.notifier).refreshQRCode(),
+                    child: const Text('刷新'),
+                  ),
+                ],
+              ),
+            ),
           // 扫描区域
           Expanded(child: _buildScannerArea(connectState)),
           // 状态提示
           _buildStatusBar(connectState),
+          if (connectState.errorMessage != null ||
+              connectState.statusMessage != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                connectState.errorMessage ?? connectState.statusMessage!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: connectState.errorMessage == null
+                      ? WeChatColors.textSecondary
+                      : Colors.red,
+                ),
+              ),
+            ),
+          if (connectState.qrExpiresAt != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '二维码有效期至 ${connectState.qrExpiresAt!.hour.toString().padLeft(2, '0')}:${connectState.qrExpiresAt!.minute.toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: WeChatColors.textHint,
+                ),
+              ),
+            ),
           // 已连接设备
           if (connectState.connectedDevices.isNotEmpty) ...[
             _buildConnectedDevices(context, ref, connectState),

@@ -2,6 +2,10 @@ import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+import 'migrations/migration_v7.dart';
+import 'migrations/migration_v8.dart';
+import 'migrations/migration_v9.dart';
+
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
@@ -24,7 +28,7 @@ class DatabaseService {
     final path = join(dbPath, 'soultalk.db');
     return openDatabase(
       path,
-      version: 7,
+      version: 9,
       onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -36,6 +40,7 @@ class DatabaseService {
   /// [rawQuery] — [execute] maps to SQLiteDatabase.execSQL which rejects
   /// any statement that produces a cursor.
   Future<void> _onConfigure(Database db) async {
+    await db.rawQuery('PRAGMA foreign_keys=ON');
     await db.rawQuery('PRAGMA journal_mode=WAL');
     await db.rawQuery('PRAGMA busy_timeout=5000');
   }
@@ -229,6 +234,10 @@ class DatabaseService {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_memory_cards_status ON memory_cards(status)',
     );
+
+    await migrateV7(db);
+    await migrateV8(db);
+    await migrateV9(db);
   }
 
   Future<void> _onOpen(Database db) async {
@@ -376,6 +385,16 @@ class DatabaseService {
       await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_memory_cards_status ON memory_cards(status)',
       );
+    }
+
+    if (oldVersion < 7) {
+      await migrateV7(db);
+    }
+    if (oldVersion < 8) {
+      await migrateV8(db);
+    }
+    if (oldVersion < 9) {
+      await migrateV9(db);
     }
   }
 

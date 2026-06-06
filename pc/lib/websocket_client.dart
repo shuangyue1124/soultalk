@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:uuid/uuid.dart';
+import 'device_identity_store.dart';
 
 /// PC 端 WebSocket 客户端，连接手机端
 class WebSocketClient {
@@ -86,6 +86,10 @@ class WebSocketClient {
     _sendMessage({'type': 'sync', 'since': since, 'limit': limit});
   }
 
+  void sendRaw(Map<String, dynamic> message) {
+    _sendMessage(message);
+  }
+
   /// 发送新消息
   void sendMessage(String contactId, String content) {
     _sendMessage({
@@ -106,11 +110,13 @@ class WebSocketClient {
     _sendMessage({'type': 'sync_check', 'lastSyncTime': lastSyncTime});
   }
 
-  void _sendAuth() {
-    final uuid = const Uuid();
+  Future<void> _sendAuth() async {
+    final identity = await DeviceIdentityStore().loadOrCreate();
     _sendMessage({
       'type': 'auth',
-      'deviceName': 'PC-${uuid.v4().substring(0, 8)}',
+      'deviceId': identity.deviceId,
+      'deviceKey': identity.deviceKey,
+      'deviceName': identity.deviceName,
     });
   }
 

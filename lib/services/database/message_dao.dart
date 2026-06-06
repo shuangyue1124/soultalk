@@ -95,10 +95,9 @@ class MessageDao {
 
   Future<Message> insert(Message message) async {
     final db = await _database;
-    final now = DateTime.now();
     final newMsg = message.copyWith(
       id: message.id.isEmpty ? _uuid.v4() : message.id,
-      createdAt: now,
+      createdAt: message.createdAt ?? DateTime.now(),
     );
     await db.insert('messages', _toMap(newMsg));
     return newMsg;

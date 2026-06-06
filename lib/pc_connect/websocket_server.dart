@@ -11,8 +11,12 @@ import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:uuid/uuid.dart';
 
 import 'connection_manager.dart';
+import '../services/database/database_service.dart';
 import 'sync_handler.dart';
 import 'api_config_sender.dart';
+import 'manifest/manifest_builder.dart';
+import 'sync_exporter.dart';
+import 'push/push_validator.dart';
 
 /// WebSocket 服务端，用于手机端与 PC 端通信
 class WebSocketServer {
@@ -31,6 +35,11 @@ class WebSocketServer {
   final ConnectionManager _connectionManager = ConnectionManager();
   final SyncHandler _syncHandler = SyncHandler();
   final ApiConfigSender _apiConfigSender = ApiConfigSender();
+  final SyncManifestBuilder _manifestBuilder = SyncManifestBuilder(
+    dbService: DatabaseService(),
+  );
+  final SyncExporter _syncExporter = SyncExporter(dbService: DatabaseService());
+  final PushValidator _pushValidator = PushValidator();
 
   final StreamController<Map<String, dynamic>> _eventController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -254,6 +263,15 @@ class WebSocketServer {
         case 'conflict_resolved':
           _handleConflictResolved(deviceId, message);
           break;
+        case 'manifest.request':
+          _handleManifestRequest(deviceId);
+          break;
+        case 'pull.request':
+          _handlePullRequest(deviceId, message);
+          break;
+        case 'push.propose':
+          _handlePushProposal(deviceId, message);
+          break;
         case 'disconnect':
           _handleDisconnect(deviceId, message);
           break;
@@ -356,6 +374,65 @@ class WebSocketServer {
 
     // 通知 PC 同步就绪
     _connectionManager.sendMessage(deviceId, {'type': 'sync_ready'});
+  }
+
+  Future<void> _handleManifestRequest(String deviceId) async {
+    final manifest = await _manifestBuilder.build();
+    _connectionManager.sendMessage(deviceId, {
+      'type': 'manifest.response',
+      'payload': manifest,
+    });
+  }
+
+  Future<void> _handlePullRequest(
+    String deviceId,
+    Map<String, dynamic> message,
+  ) async {
+    final payload =
+        (message['payload'] as Map?)?.cast<String, dynamic>() ?? message;
+    final table = payload['table'] as String?;
+    if (table == null) {
+      _connectionManager.sendMessage(deviceId, {
+        'type': 'pull.error',
+        'message': 'table is required',
+      });
+      return;
+    }
+    final ids = (payload['ids'] as List?)?.cast<String>();
+    final limit = payload['limit'] as int? ?? 500;
+    try {
+      final data = await _syncExporter.exportRows(
+        table: table,
+        ids: ids,
+        limit: limit,
+      );
+      _connectionManager.sendMessage(deviceId, {
+        'type': 'pull.chunk',
+        'payload': data,
+      });
+      _connectionManager.sendMessage(deviceId, {
+        'type': 'pull.complete',
+        'payload': {'table': table},
+      });
+    } catch (error) {
+      _connectionManager.sendMessage(deviceId, {
+        'type': 'pull.error',
+        'message': error.toString(),
+      });
+    }
+  }
+
+  void _handlePushProposal(String deviceId, Map<String, dynamic> message) {
+    final payload =
+        (message['payload'] as Map?)?.cast<String, dynamic>() ?? message;
+    final result = _pushValidator.validate(payload);
+    _connectionManager.sendMessage(deviceId, {
+      'type': 'push.result',
+      'payload': {
+        'accepted': result.allowed,
+        if (!result.allowed) 'reason': result.reason,
+      },
+    });
   }
 
   void _handleDisconnect(String deviceId, Map<String, dynamic> message) {

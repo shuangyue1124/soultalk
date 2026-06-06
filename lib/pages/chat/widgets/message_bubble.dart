@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path/path.dart' as p;
+import '../../../core/app_paths.dart';
 import '../../../theme/wechat_colors.dart';
 import '../../../models/message.dart';
 import '../../../models/regex_script.dart';
@@ -38,6 +41,9 @@ class MessageBubble extends ConsumerWidget {
     if (message.type == MessageType.image) {
       return _ImageBubble(message: message, isUser: _isUser);
     }
+    if (message.type == MessageType.file) {
+      return _FileBubble(message: message, isUser: _isUser);
+    }
 
     final scripts = ref.watch(enabledRegexScriptsProvider);
     final displayContent = _applyRegex(message, scripts);
@@ -58,6 +64,36 @@ class MessageBubble extends ConsumerWidget {
         : RegexPlacement.aiOutput;
     return service.applyScripts(msg.content, scripts, placement);
   }
+}
+
+Map<dynamic, dynamic>? _attachmentMetadata(Message message) {
+  final attachment = message.metadata?['attachment'];
+  return attachment is Map ? attachment : null;
+}
+
+String? _nonEmptyString(Object? value) {
+  return value is String && value.isNotEmpty ? value : null;
+}
+
+int? _intValue(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return null;
+}
+
+Future<File> _resolveMessageFile(Message message) async {
+  final metadata = message.metadata;
+  final attachment = _attachmentMetadata(message);
+  final relativePath =
+      _nonEmptyString(attachment?['relative_path']) ??
+      _nonEmptyString(metadata?['relative_path']);
+  if (relativePath != null) {
+    final paths = await AppPaths.create();
+    return File(p.join(paths.root.path, relativePath));
+  }
+
+  final legacyPath = _nonEmptyString(metadata?['path']);
+  return File(legacyPath ?? message.content);
 }
 
 class _TextBubble extends StatelessWidget {
@@ -347,10 +383,60 @@ class _ImageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final path = message.metadata?['path'] ?? message.content;
-    final file = File(path);
-    final exists = file.existsSync();
+    return FutureBuilder<File>(
+      future: _resolveMessageFile(message),
+      builder: (context, snapshot) {
+        final file = snapshot.data;
+        final exists = file?.existsSync() ?? false;
 
+        return Padding(
+          padding: EdgeInsets.only(
+            left: isUser ? 60 : 12,
+            right: isUser ? 12 : 60,
+            top: 4,
+            bottom: 4,
+          ),
+          child: Align(
+            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: exists
+                  ? Image.file(
+                      file!,
+                      width: 200,
+                      height: 200,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          _missingImagePlaceholder(Icons.broken_image),
+                    )
+                  : _missingImagePlaceholder(Icons.image),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _missingImagePlaceholder(IconData icon) {
+    return Container(
+      width: 200,
+      height: 200,
+      color: WeChatColors.textHint.withAlpha(50),
+      child: Icon(icon, color: WeChatColors.textHint, size: 48),
+    );
+  }
+}
+
+class _FileBubble extends StatelessWidget {
+  final Message message;
+  final bool isUser;
+  const _FileBubble({required this.message, required this.isUser});
+
+  @override
+  Widget build(BuildContext context) {
+    final attachment = _attachmentMetadata(message);
+    final name = _nonEmptyString(attachment?['name']) ?? message.content;
+    final size = _intValue(attachment?['size']);
     return Padding(
       padding: EdgeInsets.only(
         left: isUser ? 60 : 12,
@@ -360,38 +446,79 @@ class _ImageBubble extends StatelessWidget {
       ),
       child: Align(
         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-        child: ClipRRect(
+        child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          child: exists
-              ? Image.file(
-                  file,
-                  width: 200,
-                  height: 200,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 200,
-                    height: 200,
-                    color: WeChatColors.textHint.withAlpha(50),
-                    child: const Icon(
-                      Icons.broken_image,
-                      color: WeChatColors.textHint,
-                      size: 48,
-                    ),
-                  ),
-                )
-              : Container(
-                  width: 200,
-                  height: 200,
-                  color: WeChatColors.textHint.withAlpha(50),
-                  child: const Icon(
-                    Icons.image,
-                    color: WeChatColors.textHint,
-                    size: 48,
+          onTap: () => _openFile(context),
+          child: Container(
+            width: 260,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isUser ? WeChatColors.bubbleSent : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: WeChatColors.divider),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.insert_drive_file_outlined,
+                  color: WeChatColors.textSecondary,
+                  size: 36,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: WeChatColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (size != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatBytes(size),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: WeChatColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
+              ],
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _openFile(BuildContext context) async {
+    final file = await _resolveMessageFile(message);
+    if (!await file.exists()) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('文件不存在')));
+      return;
+    }
+    await OpenFilex.open(file.path);
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    return '${(mb / 1024).toStringAsFixed(1)} GB';
   }
 }
 

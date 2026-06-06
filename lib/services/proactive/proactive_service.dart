@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_service.dart';
@@ -8,6 +9,9 @@ import '../database/message_dao.dart';
 import '../database/api_config_dao.dart';
 import '../api/llm_service.dart';
 import '../moments/moments_service.dart';
+import '../extensions/extension_event_bus.dart';
+import '../scheduler/scheduler_task_handler.dart';
+import '../database/scheduler_job_dao.dart';
 import '../../models/contact.dart';
 import '../../models/message.dart';
 import '../../models/api_config.dart';
@@ -18,16 +22,24 @@ class ProactiveService {
   factory ProactiveService() => _instance;
   ProactiveService._internal();
 
-  Timer? _timer;
+  final _scheduledTimers = <String, Timer>{};
+  final _sentScheduledKeys = <String>{};
   final _random = Random();
   late final ContactDao _contactDao;
   late final MessageDao _messageDao;
   late final ApiConfigDao _apiConfigDao;
   bool _initialized = false;
+  bool _isChecking = false;
+  bool _isRunningMomentsCycle = false;
+
+  bool get isCheckingForTesting => _isChecking;
+  bool get isRunningMomentsCycleForTesting => _isRunningMomentsCycle;
 
   void Function()? onNewMessage;
 
   static const _kLastSeenKey = 'proactive_last_seen_at';
+  static const _kScheduledKeysKey = 'proactive_scheduled_keys';
+  static const _kSentScheduledKeysKey = 'proactive_sent_scheduled_keys';
 
   void init() {
     if (_initialized) return;
@@ -36,12 +48,14 @@ class ProactiveService {
     _contactDao = ContactDao(db);
     _messageDao = MessageDao(db);
     _apiConfigDao = ApiConfigDao(db);
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) => _check());
+    unawaited(_restoreScheduledState());
   }
 
   void dispose() {
-    _timer?.cancel();
-    _timer = null;
+    for (final timer in _scheduledTimers.values) {
+      timer.cancel();
+    }
+    _scheduledTimers.clear();
     _initialized = false;
   }
 
@@ -51,22 +65,24 @@ class ProactiveService {
     await prefs.setInt(_kLastSeenKey, DateTime.now().millisecondsSinceEpoch);
   }
 
-  int _checkCount = 0;
+  Future<void> runPeriodicCheck() async {
+    if (_isChecking) return;
+    _isChecking = true;
+    ExtensionEventBus.instance.publishType('proactive_check_started');
+    try {
+      await _check();
+    } finally {
+      _isChecking = false;
+    }
+  }
+
+  Future<void> runMomentsCycle() async {
+    await _runMomentsGenerationAndInteractions();
+  }
 
   Future<void> _check() async {
     final now = DateTime.now();
     if (now.hour >= 23 || now.hour < 7) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    final momentsInterval = prefs.getInt('moments_interval_minutes') ?? 60;
-    final checksNeeded = (momentsInterval / 5).round().clamp(1, 288);
-
-    _checkCount++;
-    if (_checkCount % checksNeeded == 0) {
-      MomentsService().init();
-      await MomentsService().generateMomentsForAllContacts();
-      await _aiAutoInteractWithMoments();
-    }
 
     final contacts = await _contactDao.getAll();
     final configs = await _apiConfigDao.getAll();
@@ -112,9 +128,7 @@ class ProactiveService {
     // ── 3. 离开足够久 → 触发朋友圈生成 ──────────────────────────────
     final momentsInterval = prefs.getInt('moments_interval_minutes') ?? 60;
     if (awayDuration.inMinutes >= momentsInterval) {
-      MomentsService().init();
-      await MomentsService().generateMomentsForAllContacts();
-      await _aiAutoInteractWithMoments();
+      await _runMomentsGenerationAndInteractions();
     }
 
     // ── 4. 检查自动回复/主动消息 ─────────────────────────────────────
@@ -141,8 +155,7 @@ class ProactiveService {
         final diff = apiTime.difference(now).abs();
 
         if (diff.inHours <= 1) {
-          // 差异 ≤ 1 小时 → 以 API 时间为准，在指定时间发送
-          await _sendScheduledMessage(contact, configs, scheduledMsg);
+          _scheduleMessage(contact, configs, scheduledMsg, now);
         } else {
           // 差异 > 1 小时 → 触发告警
           _alertTimeMismatch(contact, apiTime, now);
@@ -236,10 +249,136 @@ class ProactiveService {
     }
   }
 
+  void _scheduleMessage(
+    Contact contact,
+    List<ApiConfig> configs,
+    ScheduledMessage msg,
+    DateTime now,
+  ) {
+    final key = _scheduledKey(contact.id, msg.scheduledAt, msg.content);
+    if (_scheduledTimers.containsKey(key) || _sentScheduledKeys.contains(key)) {
+      return;
+    }
+
+    final delay = msg.scheduledAt.difference(now);
+    if (delay <= Duration.zero) {
+      final sendAt = now;
+      unawaited(_markScheduledSent(key));
+      unawaited(_sendScheduledMessage(contact, configs, msg, sendAt));
+      return;
+    }
+
+    unawaited(_rememberScheduledKey(key));
+    _scheduledTimers[key] = Timer(delay, () {
+      _scheduledTimers.remove(key);
+      unawaited(_removeScheduledKey(key));
+      unawaited(_markScheduledSent(key));
+      unawaited(_sendScheduledMessage(contact, configs, msg, DateTime.now()));
+    });
+  }
+
+  Future<void> _restoreScheduledState() async {
+    final prefs = await SharedPreferences.getInstance();
+    _sentScheduledKeys.addAll(
+      prefs.getStringList(_kSentScheduledKeysKey) ?? const [],
+    );
+    final scheduledKeys = prefs.getStringList(_kScheduledKeysKey) ?? const [];
+    final contacts = await _contactDao.getAll();
+    final configs = await _apiConfigDao.getAll();
+    if (configs.isEmpty) return;
+
+    for (final key in scheduledKeys) {
+      if (_sentScheduledKeys.contains(key)) continue;
+      final record = _decodeScheduledKey(key);
+      if (record == null) {
+        await _removeScheduledKey(key);
+        continue;
+      }
+      final now = DateTime.now();
+      if (record.scheduledAt.isBefore(now)) {
+        await _removeScheduledKey(key);
+        continue;
+      }
+      final contact = contacts
+          .where((item) => item.id == record.contactId)
+          .firstOrNull;
+      if (contact == null) {
+        await _removeScheduledKey(key);
+        continue;
+      }
+      final msg = ScheduledMessage(
+        content: record.content,
+        scheduledAt: record.scheduledAt,
+      );
+      final delay = record.scheduledAt.difference(now);
+      _scheduledTimers[key]?.cancel();
+      _scheduledTimers[key] = Timer(delay, () {
+        _scheduledTimers.remove(key);
+        unawaited(_removeScheduledKey(key));
+        unawaited(_markScheduledSent(key));
+        unawaited(_sendScheduledMessage(contact, configs, msg, DateTime.now()));
+      });
+    }
+  }
+
+  String _scheduledKey(String contactId, DateTime scheduledAt, String content) {
+    return jsonEncode({
+      'contactId': contactId,
+      'scheduledAt': scheduledAt.toIso8601String(),
+      'content': content,
+    });
+  }
+
+  _ScheduledKeyRecord? _decodeScheduledKey(String key) {
+    try {
+      final decoded = jsonDecode(key);
+      if (decoded is! Map<String, dynamic>) return null;
+      final contactId = decoded['contactId'] as String?;
+      final scheduledAtText = decoded['scheduledAt'] as String?;
+      final content = decoded['content'] as String?;
+      final scheduledAt = DateTime.tryParse(scheduledAtText ?? '');
+      if (contactId == null || scheduledAt == null || content == null) {
+        return null;
+      }
+      return _ScheduledKeyRecord(
+        contactId: contactId,
+        scheduledAt: scheduledAt,
+        content: content,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _rememberScheduledKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = (prefs.getStringList(_kScheduledKeysKey) ?? const []).toSet();
+    keys.add(key);
+    await prefs.setStringList(_kScheduledKeysKey, keys.toList());
+  }
+
+  Future<void> _removeScheduledKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = (prefs.getStringList(_kScheduledKeysKey) ?? const []).toSet();
+    keys.remove(key);
+    await prefs.setStringList(_kScheduledKeysKey, keys.toList());
+  }
+
+  Future<void> _markScheduledSent(String key) async {
+    _sentScheduledKeys.add(key);
+    await _removeScheduledKey(key);
+    final prefs = await SharedPreferences.getInstance();
+    final sent = (prefs.getStringList(_kSentScheduledKeysKey) ?? const [])
+        .toSet();
+    sent.add(key);
+    await prefs.setStringList(_kSentScheduledKeysKey, sent.toList());
+  }
+
   Future<void> _sendScheduledMessage(
     Contact contact,
     List<ApiConfig> configs,
     ScheduledMessage msg,
+    DateTime createdAt,
   ) async {
     final service = LlmService.fromConfig(
       configs.firstWhere(
@@ -279,21 +418,17 @@ ${msg.content}
           contactId: contact.id,
           role: MessageRole.assistant,
           content: reply.trim(),
-          createdAt: msg.scheduledAt, // 使用 API 指定的时间
+          createdAt: createdAt,
         ),
       );
 
-      await _contactDao.updateLastMessage(
-        contact.id,
-        reply.trim(),
-        msg.scheduledAt,
-      );
+      await _contactDao.updateLastMessage(contact.id, reply.trim(), createdAt);
       await _contactDao.incrementUnread(contact.id);
 
       final db = await DatabaseService().database;
       await db.update(
         'contacts',
-        {'last_proactive_at': msg.scheduledAt.toIso8601String()},
+        {'last_proactive_at': createdAt.toIso8601String()},
         where: 'id = ?',
         whereArgs: [contact.id],
       );
@@ -310,11 +445,23 @@ ${msg.content}
   ) {
     // 【已确认】差异超过 1 小时 → 告警记录
     final diff = apiTime.difference(systemTime).abs();
-    // ignore: avoid_print
-    print(
+    developer.log(
       '[TimeAlert] contact: ${contact.name}, '
       'apiTime: $apiTime, systemTime: $systemTime, diff: ${diff.inMinutes}m',
+      name: 'ProactiveService',
     );
+  }
+
+  Future<void> _runMomentsGenerationAndInteractions() async {
+    if (_isRunningMomentsCycle) return;
+    _isRunningMomentsCycle = true;
+    try {
+      MomentsService().init();
+      await MomentsService().generateMomentsForAllContacts();
+      await _aiAutoInteractWithMoments();
+    } finally {
+      _isRunningMomentsCycle = false;
+    }
   }
 
   /// AI 自动对朋友圈进行点赞和评论
@@ -490,6 +637,11 @@ ${msg.content}
           createdAt: DateTime.now(),
         ),
       );
+      ExtensionEventBus.instance.publishType(
+        'proactive_message_sent',
+        contactId: contact.id,
+        payload: {'content': reply.trim()},
+      );
 
       await _contactDao.updateLastMessage(
         contact.id,
@@ -511,10 +663,76 @@ ${msg.content}
   }
 }
 
+class ProactiveCheckTaskHandler implements SchedulerTaskHandler {
+  final ProactiveService service;
+  final Future<void> Function()? runCheck;
+
+  ProactiveCheckTaskHandler({ProactiveService? service, this.runCheck})
+    : service = service ?? ProactiveService();
+
+  @override
+  String get type => 'proactive_check';
+
+  @override
+  Future<SchedulerTaskResult> run(SchedulerJobRecord job) async {
+    if (runCheck != null) {
+      await runCheck!();
+    } else {
+      await service.runPeriodicCheck();
+    }
+    return SchedulerTaskResult.success(
+      summary: 'checked',
+      nextRunAfterMillis: DateTime.now()
+          .add(const Duration(minutes: 5))
+          .millisecondsSinceEpoch,
+    );
+  }
+}
+
+class MomentsCycleTaskHandler implements SchedulerTaskHandler {
+  final ProactiveService service;
+  final Future<void> Function()? runCycle;
+
+  MomentsCycleTaskHandler({ProactiveService? service, this.runCycle})
+    : service = service ?? ProactiveService();
+
+  @override
+  String get type => 'moments_cycle';
+
+  @override
+  Future<SchedulerTaskResult> run(SchedulerJobRecord job) async {
+    if (runCycle != null) {
+      await runCycle!();
+    } else {
+      await service.runMomentsCycle();
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final intervalMinutes = prefs.getInt('moments_interval_minutes') ?? 60;
+    return SchedulerTaskResult.success(
+      summary: 'moments cycle completed',
+      nextRunAfterMillis: DateTime.now()
+          .add(Duration(minutes: intervalMinutes))
+          .millisecondsSinceEpoch,
+    );
+  }
+}
+
 /// 计划消息模型，用于自动回复验证
 class ScheduledMessage {
   final String content;
   final DateTime scheduledAt;
 
   const ScheduledMessage({required this.content, required this.scheduledAt});
+}
+
+class _ScheduledKeyRecord {
+  final String contactId;
+  final DateTime scheduledAt;
+  final String content;
+
+  const _ScheduledKeyRecord({
+    required this.contactId,
+    required this.scheduledAt,
+    required this.content,
+  });
 }

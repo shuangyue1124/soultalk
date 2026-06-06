@@ -1,6 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/backup/auto_backup_service.dart';
+import '../services/database/database_service.dart';
+import '../services/database/scheduler_job_dao.dart';
+
 const _kGlobalPromptEnabled = 'global_prompt_enabled';
 const _kGlobalPromptText = 'global_prompt_text';
 const _kMomentsIntervalMinutes = 'moments_interval_minutes';
@@ -125,10 +129,25 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setMomentsInterval(int minutes) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kMomentsIntervalMinutes, minutes);
+    await _syncMomentsCycleSchedule(minutes);
     state = AsyncData(
       (state.value ?? const AppSettings()).copyWith(
         momentsIntervalMinutes: minutes,
       ),
+    );
+  }
+
+  Future<void> _syncMomentsCycleSchedule(int minutes) async {
+    final dao = SchedulerJobDao(DatabaseService());
+    final existing = await dao.getByTypeTarget('moments_cycle', 'global');
+    if (existing == null) return;
+    await dao.reschedule(
+      existing.id,
+      runAfter: DateTime.now()
+          .add(Duration(minutes: minutes))
+          .millisecondsSinceEpoch,
+      status: 'pending',
+      retryCount: 0,
     );
   }
 
@@ -176,6 +195,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setAutoBackupEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kAutoBackupEnabled, enabled);
+    await AutoBackupService().syncSchedule();
     state = AsyncData(
       (state.value ?? const AppSettings()).copyWith(autoBackupEnabled: enabled),
     );
@@ -184,6 +204,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setAutoBackupInterval(int minutes) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kAutoBackupInterval, minutes);
+    await AutoBackupService().syncSchedule();
     state = AsyncData(
       (state.value ?? const AppSettings()).copyWith(
         autoBackupInterval: minutes,
@@ -194,6 +215,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setAutoBackupCloudType(String type) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAutoBackupCloudType, type);
+    await AutoBackupService().syncSchedule();
     state = AsyncData(
       (state.value ?? const AppSettings()).copyWith(autoBackupCloudType: type),
     );

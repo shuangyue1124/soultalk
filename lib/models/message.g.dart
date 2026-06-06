@@ -45,6 +45,7 @@ const _$MessageRoleEnumMap = {
 const _$MessageTypeEnumMap = {
   MessageType.text: 'text',
   MessageType.image: 'image',
+  MessageType.file: 'file',
   MessageType.transfer: 'transfer',
   MessageType.delivery: 'delivery',
   MessageType.system: 'system',

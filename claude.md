@@ -1,75 +1,179 @@
-# Claude Code 全自动优化指令（SoulTalk 专用）
+# SoulTalk 项目状态与续接说明
 
-## 角色定义
-你是一名资深 Flutter 工程师 + AI 系统架构师，正在全自动模式下维护和优化 **SoulTalk** 项目。你的目标是：**不依赖人工提问，自主识别问题、设计方案、编写代码、运行校验、提交改进**。
+真实项目根目录：C:/Users/Admin/Desktop/AI_talk。C:/Users/Admin/Desktop/soultalk 主要是文档目录。技术栈固定为 Flutter/Dart + Riverpod + SQLite/sqflite。
 
-## 任务范围（优先级从高到低）
-1. **代码健康**  
-   - 修复静态分析警告 (`dart analyze`)  
-   - 删除未使用的 import / 变量 / 死代码  
-   - 统一代码风格（遵循 `analysis_options.yaml`）
+## 1. 项目目标
 
-2. **性能优化**  
-   - 减少不必要的 Riverpod 重建（使用 `select` / `keepAlive`）  
-   - 优化数据库查询（索引、批量操作）  
-   - 减少内存占用（图片缓存、列表懒加载）
+SoulTalk 是 AI 微信风格社交应用，已有聊天、通讯录、发现/朋友圈、个人中心、角色卡、长期记忆、主动消息、文件发送、API 配置、余额管理、ZIP/AES/WebDAV/S3 备份。
 
-3. **稳定性**  
-   - 补充缺失的异常捕获（尤其是异步、数据库、网络）  
-   - 修复已知崩溃（参考 GitHub Issues 标签 `bug`）  
-   - 增加关键路径的单元测试和 Widget 测试
+当前重构目标：保留 SoulTalk 现有体验；完成 SillyTavern L1 兼容；建立文件为权威源、SQLite 为索引和私有数据的本地优先架构；为 LanSync、统一 Scheduler、AI 自动朋友圈、主动对话、ExtensionBridge 打基础。
 
-4. **记忆系统完善**  
-   - 检查 `services/memory/` 各模块的边界条件  
-   - 优化检索门控 (`RetrievalGate`) 决策逻辑  
-   - 完善卡片提取与审核策略 (`CardExtractor`, `ReviewPolicy`)
+## 2. 已完成的功能清单
 
-5. **API & 余额模块**  
-   - 自动测试所有 provider 的余额查询接口  
-   - 对超时/错误返回友好降级  
-   - 当余额 < 20% 时在 UI 和日志中加强提醒
+### 规划文档
 
-6. **文档与 CI**  
-   - 保持 `README.md` 与实际结构同步  
-   - 自动补全 pub.dev 依赖的版本文档  
-   - 确保 GitHub Actions 工作流始终通过
+已创建 SOULTALK_REFACTOR_PLAN.md 和 SOULTALK_IMPLEMENTATION_SEQUENCE.md，包含架构蓝图、模块拆分、SQLite 表规划、LanSync 协议、阶段顺序、验收标准。
 
-## 工作流（全自动循环）
-每次运行按以下步骤执行，**无需等待用户确认**：
+### 文件权威源基础设施
 
-1. **信息收集**  
-   - 运行 `dart analyze .` 和 `flutter test`  
-   - 检查最新 commit 中的变更范围  
-   - 读取 `CHANGELOG.md` 和最近的 GitHub Issues（标题含 `bug` / `performance`）
+已完成 st_compat/ 与 soultalk/ 目录初始化、原子写入、路径清洗、文件 manifest 扫描、file_index 写入、ST 兼容索引写入。
 
-2. **方案决策**  
-   - 选择影响最大、风险最小的 1~3 项任务  
-   - 设计方案（20 行以内），记录到 `DEV_NOTES.md`
+关键文件：
+- lib/core/app_paths.dart
+- lib/core/file_store/path_sanitizer.dart
+- lib/core/file_store/atomic_file_writer.dart
+- lib/core/file_store/compat_file_store.dart
+- lib/core/file_store/file_manifest_service.dart
+- lib/services/st_compat/compat_storage_bootstrap_service.dart
 
-3. **代码编写**  
-   - 直接修改 `.dart` 文件（可同时改多个）  
-   - 同步更新测试文件（`test/` 下对应路径）
+### SQLite 迁移与 DAO
 
-4. **验证**  
-   - 再次运行 `dart analyze` 和 `flutter test`  
-   - 如有失败 → 自动修复（最多重试 3 次）
+当前数据库版本：9。
 
-5. **提交**  
-   - 生成 commit 信息 格式：`[auto-opt] 简述修改内容`  
-   - 创建 Pull Request（标题前缀 `[AUTO]`）  
-   - 若通过 CI，可自动合并（需在 PR 描述末尾加 `/merge`）
+迁移文件：
+- lib/services/database/migrations/migration_v7.dart：file_index、st_character_index、st_chat_index、st_world_index、st_preset_index
+- lib/services/database/migrations/migration_v8.dart：attachment_index
+- lib/services/database/migrations/migration_v9.dart：scheduler_jobs、scheduler_run_log
 
-## 安全约束
-- 不修改数据库 schema 的破坏性变更（仅允许加列/加索引）  
-- 不直接向 `master` push，必须通过 PR  
-- 不改动用户敏感数据（如 API Key 明文存储方式）  
-- 删除文件前必须先确认未被任何地方引用（递归检查）
+新增 DAO：
+- lib/services/database/file_index_dao.dart
+- lib/services/database/st_character_index_dao.dart
+- lib/services/database/st_chat_index_dao.dart
+- lib/services/database/st_world_index_dao.dart
+- lib/services/database/st_preset_index_dao.dart
+- lib/services/database/attachment_index_dao.dart
+- lib/services/database/scheduler_job_dao.dart
 
-## 特殊能力
-- 可调用 GitHub API 获取 Issues / PR 内容  
-- 可读取 `.github/workflows/` 中的 YAML 并调整超时/步骤  
-- 可执行 `flutter pub upgrade` 并自动解决简单冲突
+### SillyTavern L1 只读解析
 
-## 启动信号
-当你看到这条消息后，**立即开始**执行一次全自动优化循环。  
-如果已经运行过，则每隔 4 小时重新触发一次（通过检测 `.last_optimization` 文件）。
+已完成角色卡 JSON/PNG chara chunk、聊天 JSONL、世界书 JSON、OpenAI/Context/Instruct/通用 preset、ST regex parser 和 mapper。
+
+相关目录：
+- lib/services/st_compat/character/
+- lib/services/st_compat/chat/
+- lib/services/st_compat/world_info/
+- lib/services/st_compat/presets/
+- lib/services/st_compat/regex/
+
+### L1 辅助层
+
+已完成 MacroService、STWorldInfoMatcher、STPromptCompatAssembler。支持基础宏、if 条件块、世界书关键词/正则匹配、Context preset 与角色卡字段组装。
+
+关键文件：
+- lib/services/st_compat/macros/macro_service.dart
+- lib/services/st_compat/world_info/st_world_info_matcher.dart
+- lib/services/st_compat/prompt/st_prompt_compat_assembler.dart
+
+### st_compat 文件仓库层
+
+已完成 STCharacterRepository、STChatRepository、STWorldInfoRepository、STPresetRepository。
+
+### PromptAssemblyService 最小接入
+
+文件：lib/services/api/prompt_assembly_service.dart。
+
+已接入 ST 角色卡 data.description、data.personality、data.scenario、data.system_prompt、data.post_history_instructions、data.extensions.regex_scripts。非流式请求已使用 requestMessages。postHistoryPrompt 不再作为 fake user 消息追加到最后，而是并入 system prompt。换行分隔符使用 String.fromCharCodes([10, 10])，避免脚本写坏字符串。
+
+### 附件基础设施
+
+已完成 AttachmentService 和 attachment_index。附件导入到 soultalk/attachments/{chatId}/，记录 sha256、size、originalName、mime、relativePath，并可生成聊天 extra metadata。尚未接入旧文件发送 UI/流程。
+
+关键文件：
+- lib/services/file_send/attachment_service.dart
+- lib/services/database/attachment_index_dao.dart
+
+### 备份适配
+
+文件：lib/services/backup/backup_service.dart。已扩展 BackupSection：compatFiles、attachments。备份可包含 st_compat/ 与 soultalk/attachments/，恢复可还原对应目录。路径归一化使用 p.relative(...).split(p.separator).join("/")。
+
+### ProactiveService 修复
+
+文件：lib/services/proactive/proactive_service.dart。计划消息 key 改为 JSON 字符串；App 重启后恢复未来计划消息 Timer；过期 key 清理；已发送 key 持久化；立即发送时使用当前时间作为 createdAt。
+
+### 旧 SQLite 数据导出到 st_compat
+
+文件：lib/services/st_compat/legacy/legacy_compat_export_service.dart。
+
+支持 contacts 导出为 st_compat/characters/{name}.json；messages 导出为 st_compat/chats/{characterName}/{characterName} - imported.jsonl；导出后自动调用 CompatStorageBootstrapService.initializeAndRebuildIndex；不修改旧表；不覆盖已有文件，使用 .imported-N 后缀。
+
+## 3. 当前关键代码结构
+
+核心文件：
+- lib/main.dart：App 入口，初始化 sqflite FFI，后台执行兼容索引重建。
+- lib/services/database/database_service.dart：SQLite 初始化与迁移，当前版本 9。
+- lib/services/chat/chat_service.dart：聊天主链路，流式/非流式统一 request messages。
+- lib/services/api/prompt_assembly_service.dart：Prompt 主组装，已接入 ST 角色卡字段和 regex。
+- lib/services/backup/backup_service.dart：ZIP/AES 导入导出，已纳入 st_compat 与附件。
+- lib/services/proactive/proactive_service.dart：旧主动消息服务，已修复调度状态恢复。
+
+兼容层目录：lib/services/st_compat/ 下的 character、chat、world_info、presets、regex、macros、prompt、legacy。
+
+重要测试：
+- test/services/st_compat/legacy_compat_export_service_test.dart
+- test/services/st_compat/compat_storage_bootstrap_service_test.dart
+- test/services/api/prompt_assembly_service_test.dart
+- test/services/st_compat/st_repositories_test.dart
+- test/services/st_compat/character/st_character_card_parser_test.dart
+- test/services/st_compat/chat/st_chat_jsonl_codec_test.dart
+- test/services/st_compat/world_info/st_world_info_matcher_test.dart
+- test/services/st_compat/regex/st_regex_mapper_test.dart
+
+## 4. 正在进行中的任务与问题
+
+当前推进方向：
+1. 现有文件发送 UI/流程接入 AttachmentService。
+2. 备份恢复后自动重建 file_index 与 ST 索引。
+3. 统一 Scheduler 服务层。
+4. 后续迁移 Proactive/FriendCircle/LanSync。
+
+已知未完成：附件服务层已完成但旧文件发送 UI 尚未接入；备份 manifest 尚未包含 hash/size/mtime 校验；恢复流程尚未在完成后自动重建索引；Scheduler 只有 DB/DAO 基础；LanSync 尚未实现；ExtensionBridge L2/L3 尚未实现。
+
+最近修复：chat_service.dart 字符串跨行语法错误；backup_service.dart enum switch 和反斜杠语法错误；ProactiveService JSON key 和 Timer 恢复。
+
+## 5. 下一步计划
+
+P0：补齐文件权威源闭环。搜索 file_picker、metadata、MessageType.file、open_filex、send file、attachment，找到现有文件发送入口，接入 AttachmentService.importFile，并将附件 metadata 写入 message metadata 或 ST JSONL extra.soultalk_attachments，保持旧 UI 不变。
+
+P1：备份恢复补强。备份 manifest 增加 st_compat 和 attachments 文件 hash、size、mtime；恢复时校验 hash；恢复完成后调用 CompatStorageBootstrapService.initializeAndRebuildIndex；恢复前创建本地恢复点。
+
+P2：统一 Scheduler 服务层。实现 UnifiedScheduler、SchedulerTaskHandler、SchedulerPolicy、SchedulerRunLogDao，并先把 AutoBackup 接入 scheduler_jobs。
+
+P3：Proactive/FriendCircle 迁移到 Scheduler。新增 proactive_rules、proactive_events、friend_circle_rules、新版发布日志，保留旧服务并逐步切换。
+
+P4：LanSync v1。顺序：手动 IP + WebSocket -> device id/key -> 配对授权 -> manifest exchange -> 单向 pull -> 双向 push -> 冲突处理 -> mDNS/UDP。
+
+P5：ExtensionBridge L2/L3。顺序：manifest parser -> event bus -> context provider -> flutter_js adapter -> SillyTavern.getContext -> WebView 沙箱。
+
+## 6. 重要注意事项
+
+1. 不要切换技术栈，必须保持 Flutter/Dart + Riverpod + SQLite/sqflite。
+2. 不要删除旧表，旧 contacts/messages/moments 仍是兼容期数据来源。
+3. ST 生态数据以 st_compat/ 文件为权威源，SQLite 只做索引。
+4. LanSync 后续不得同步 API key、secrets、WebDAV/S3 凭据。
+5. S3/WebDAV/AES/ZIP 备份必须保留。
+6. 冷启动不能阻塞，索引重建使用后台 unawaited。
+7. 每次改动后至少跑 flutter analyze，涉及测试逻辑时跑相关 flutter test。
+8. 当前有 CLAUDE.md 和 claude.md 两个文件，内容应保持同步。
+
+## 7. 如何运行和测试
+
+进入项目根目录：cd C:/Users/Admin/Desktop/AI_talk
+
+获取依赖：flutter pub get
+
+静态检查：flutter analyze
+
+运行全部测试：flutter test
+
+当前最新完整结果：flutter analyze 无问题；flutter test 全部通过，+116。
+
+运行部分新增测试：
+- flutter test test/services/st_compat/legacy_compat_export_service_test.dart
+- flutter test test/services/st_compat/compat_storage_bootstrap_service_test.dart
+- flutter test test/services/api/prompt_assembly_service_test.dart
+
+Windows debug：flutter run -d windows，或 flutter build windows --debug。
+
+## 8. 建议下一次对话从这里开始
+
+继续补齐文件权威源闭环：读取现有文件发送实现，将旧文件发送流程最小接入 AttachmentService，并保证 flutter analyze / flutter test 通过。

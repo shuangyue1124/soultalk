@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,10 @@ import 'providers/settings_provider.dart';
 import 'services/proactive/proactive_service.dart';
 import 'services/update/update_service.dart';
 import 'services/backup/auto_backup_service.dart';
+import 'services/scheduler/unified_scheduler.dart';
+import 'services/st_compat/compat_storage_bootstrap_service.dart';
+import 'services/extensions/extension_bridge_service.dart';
+import 'services/extensions/extension_event_bus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,18 +30,38 @@ void main() async {
 
   final container = ProviderContainer();
 
+  unawaited(
+    CompatStorageBootstrapService.create().then(
+      (service) => service.initializeAndRebuildIndex(),
+    ),
+  );
+
+  unawaited(
+    ExtensionBridgeService().initialize().then((bridge) async {
+      await bridge.loadEnabledExtensions();
+      ExtensionEventBus.instance.publishType('app_ready');
+    }),
+  );
+
   final proactive = ProactiveService();
   proactive.init();
-  proactive.checkOnAppOpen();
   proactive.onNewMessage = () =>
       container.read(contactsProvider.notifier).refresh();
+  proactive.checkOnAppOpen();
 
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool('check_update_on_startup') ?? false) {
     UpdateService().checkUpdate();
   }
 
-  AutoBackupService().init();
+  UnifiedScheduler.instance.start(
+    handlers: [
+      AutoBackupTaskHandler(),
+      ProactiveCheckTaskHandler(service: proactive),
+      MomentsCycleTaskHandler(service: proactive),
+    ],
+  );
+  await AutoBackupService().init();
 
   runApp(
     UncontrolledProviderScope(
@@ -67,6 +92,7 @@ class _SoulTalkAppState extends ConsumerState<SoulTalkApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ProactiveService().dispose();
+    UnifiedScheduler.instance.stop();
     AutoBackupService().dispose();
     widget.container.dispose();
     super.dispose();
