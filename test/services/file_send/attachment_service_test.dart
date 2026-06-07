@@ -80,30 +80,36 @@ void main() {
     expect(AttachmentService.inferMimeType('a.bin'), isNull);
   });
 
-  test('sanitizes chat id before using it as an attachment directory', () async {
-    final source = File('${root.path}/note.txt');
-    await source.writeAsString('hello');
+  test(
+    'sanitizes chat id before using it as an attachment directory',
+    () async {
+      final source = File('${root.path}/note.txt');
+      await source.writeAsString('hello');
 
-    final dao = AttachmentIndexDao(dbService);
-    final service = AttachmentService(
-      paths: AppPaths.fromRootForTesting(root),
-      attachmentIndexDao: dao,
-    );
+      final dao = AttachmentIndexDao(dbService);
+      final service = AttachmentService(
+        paths: AppPaths.fromRootForTesting(root),
+        attachmentIndexDao: dao,
+      );
 
-    final record = await service.importFile(
-      chatId: 'chat/../../evil:room',
-      source: source,
-      mimeType: 'text/plain',
-    );
+      final record = await service.importFile(
+        chatId: 'chat/../../evil:room',
+        source: source,
+        mimeType: 'text/plain',
+      );
 
-    expect(record.chatId, 'chat/../../evil:room');
-    expect(record.relativePath.split('/'), isNot(contains('..')));
-    expect(
-      record.relativePath,
-      startsWith('soultalk/attachments/chat_.._.._evil_room/'),
-    );
-    expect(await File('${root.path}/${record.relativePath}').exists(), isTrue);
-  });
+      expect(record.chatId, 'chat/../../evil:room');
+      expect(record.relativePath.split('/'), isNot(contains('..')));
+      expect(
+        record.relativePath,
+        startsWith('soultalk/attachments/chat_.._.._evil_room/'),
+      );
+      expect(
+        await File('${root.path}/${record.relativePath}').exists(),
+        isTrue,
+      );
+    },
+  );
 }
 
 class _TestDatabaseService implements DatabaseService {
